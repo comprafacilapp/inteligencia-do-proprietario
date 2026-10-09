@@ -35,6 +35,7 @@ const oportunidades = [
 function App() {
   const [periodo, setPeriodo] = useState('Este mês')
   const [secao, setSecao] = useState('Visão geral')
+  const [alertaSelecionado, setAlertaSelecionado] = useState<string | null>(null)
 
   const secoes = [
     'Visão geral',
@@ -151,11 +152,44 @@ function App() {
             </div>
 
             {alertas.map((alerta) => (
-              <article className="alerta" key={alerta.titulo}>
+              <article
+              className="alerta"
+              key={alerta.titulo}
+              onClick={() =>
+                setAlertaSelecionado(
+                  alertaSelecionado === alerta.titulo ? null : alerta.titulo
+                )
+              }
+              style={{ cursor: 'pointer' }}
+            >
                 <span className={`alerta-marcador ${alerta.nivel}`} />
                 <div>
                   <h3>{alerta.titulo}</h3>
                   <p>{alerta.descricao}</p>
+
+                  {alertaSelecionado === alerta.titulo && (
+  <div
+    style={{
+      marginTop: '12px',
+      padding: '14px',
+      background: '#f3f6fb',
+      borderRadius: '10px',
+      fontSize: '13px',
+      lineHeight: '1.6',
+    }}
+  >
+    <strong>Diagnóstico preliminar</strong>
+    <p>
+      Este alerta merece investigação. Compare os dados do período
+      atual com os anteriores para identificar possíveis causas.
+    </p>
+    <p>
+      <strong>Próxima ação:</strong> confira os registros financeiros
+      relacionados antes de tomar uma decisão.
+    </p>
+  </div>
+)}
+
                 </div>
               </article>
             ))}

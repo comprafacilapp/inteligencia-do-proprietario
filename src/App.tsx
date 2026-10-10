@@ -68,6 +68,36 @@ function App() {
       JSON.stringify(resultadosDecisoes)
     );
   }, [resultadosDecisoes]);
+
+  const [impactosDecisoes, setImpactosDecisoes] = useState<
+    Record<string, number>
+  >(() => {
+    try {
+      const salvos = localStorage.getItem('prevanzia_impactos');
+      const dados: unknown = salvos ? JSON.parse(salvos) : {};
+
+      if (typeof dados !== 'object' || dados === null || Array.isArray(dados)) {
+        return {};
+      }
+
+      return Object.fromEntries(
+        Object.entries(dados).filter(
+          ([, valor]) =>
+            typeof valor === 'number' && Number.isFinite(valor) && valor >= 0
+        )
+      );
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      'prevanzia_impactos',
+      JSON.stringify(impactosDecisoes)
+    );
+  }, [impactosDecisoes]);
+
   useEffect(() => {
     localStorage.setItem('prevanzia_decisoes', JSON.stringify(decisoes));
   }, [decisoes]);
@@ -413,6 +443,35 @@ function App() {
               Acompanhe as decisões registradas e os resultados que ainda
               precisam ser avaliados.
             </p>
+            <div
+              style={{
+                padding: '20px',
+                background: '#eaf6f5',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>Impacto financeiro registrado</p>
+
+              <strong
+                style={{
+                  fontSize: '28px',
+                  color: '#214b58',
+                }}
+              >
+                {Object.values(impactosDecisoes)
+                  .reduce((total, valor) => total + valor, 0)
+                  .toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+              </strong>
+
+              <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                Soma dos valores informados nas decisões.
+              </p>
+            </div>
 
             {decisoes.length === 0 ? (
               <p className="subtitulo">
@@ -426,13 +485,11 @@ function App() {
                     <div>
                       <div>
                         <strong>{decisao}</strong>
-
                         {/* CÓDIGO NOVO COMEÇA AQUI */}
                         <p>
                           Resultado:{' '}
                           {resultadosDecisoes[String(indice)] || 'PENDENTE'}
                         </p>
-
                         <div
                           style={{
                             display: 'flex',
@@ -478,7 +535,52 @@ function App() {
                             )
                           )}
                         </div>
-                        {/* CÓDIGO NOVO TERMINA AQUI */}
+                        <div style={{ marginTop: '16px' }}>
+                          <label
+                            htmlFor={`impacto-${indice}`}
+                            style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              fontWeight: 600,
+                            }}
+                          >
+                            Impacto financeiro (R$)
+                          </label>
+
+                          <input
+                            id={`impacto-${indice}`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Ex.: 1500,00"
+                            value={impactosDecisoes[String(indice)] ?? ''}
+                            onChange={(evento) => {
+                              const valor = evento.target.value;
+
+                              setImpactosDecisoes((anteriores) => {
+                                const atualizados = { ...anteriores };
+
+                                if (valor === '') {
+                                  delete atualizados[String(indice)];
+                                } else {
+                                  const numero = Number(valor);
+
+                                  if (Number.isFinite(numero) && numero >= 0) {
+                                    atualizados[String(indice)] = numero;
+                                  }
+                                }
+
+                                return atualizados;
+                              });
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '12px',
+                              border: '1px solid #dce4ef',
+                              borderRadius: '10px',
+                            }}
+                          />
+                        </div>
                       </div>
                     </div>
                   </article>

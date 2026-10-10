@@ -101,6 +101,39 @@ function App() {
     });
   }
 
+  // MARCO 11 — RESUMO FINANCEIRO AUTOMÁTICO
+
+  const lancamentosEmpresa = lancamentosFinanceiros.filter(
+    (lancamento) => lancamento.empresaId === 'empresa_demo'
+  );
+
+  const totalReceitas = lancamentosEmpresa.reduce(
+    (total, lancamento) =>
+      lancamento.tipo === 'RECEITA' ? total + lancamento.valor : total,
+    0
+  );
+
+  const totalDespesas = lancamentosEmpresa.reduce(
+    (total, lancamento) =>
+      lancamento.tipo === 'DESPESA' ? total + lancamento.valor : total,
+    0
+  );
+
+  const saldoFinanceiro = totalReceitas - totalDespesas;
+
+  const situacaoFinanceira =
+    saldoFinanceiro > 0
+      ? 'POSITIVO'
+      : saldoFinanceiro < 0
+      ? 'NEGATIVO'
+      : 'ZERADO';
+
+  const formatarValorFinanceiro = (valor: number) =>
+    valor.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+
   const [secao, setSecao] = useState('Visão geral');
   const [novaDecisao, setNovaDecisao] = useState('');
   const [descricaoLancamento, setDescricaoLancamento] = useState('');
@@ -907,6 +940,91 @@ function App() {
             <p className="subtitulo">
               Registre receitas e despesas para acompanhar a situação financeira
               da empresa.
+            </p>
+
+            {/* MARCO 11 — RESUMO FINANCEIRO AUTOMÁTICO */}
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '16px',
+                marginTop: '24px',
+                marginBottom: '20px',
+              }}
+            >
+              <div
+                style={{
+                  padding: '20px',
+                  borderRadius: '14px',
+                  background: '#ecfdf5',
+                  border: '1px solid #bbf7d0',
+                }}
+              >
+                <p style={{ margin: '0 0 10px', color: '#166534' }}>
+                  Total de receitas
+                </p>
+                <strong style={{ fontSize: '24px', color: '#166534' }}>
+                  {formatarValorFinanceiro(totalReceitas)}
+                </strong>
+              </div>
+
+              <div
+                style={{
+                  padding: '20px',
+                  borderRadius: '14px',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                }}
+              >
+                <p style={{ margin: '0 0 10px', color: '#991b1b' }}>
+                  Total de despesas
+                </p>
+                <strong style={{ fontSize: '24px', color: '#991b1b' }}>
+                  {formatarValorFinanceiro(totalDespesas)}
+                </strong>
+              </div>
+
+              <div
+                style={{
+                  padding: '20px',
+                  borderRadius: '14px',
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                }}
+              >
+                <p style={{ margin: '0 0 10px', color: '#1e40af' }}>
+                  Saldo financeiro
+                </p>
+                <strong
+                  style={{
+                    fontSize: '24px',
+                    color: saldoFinanceiro < 0 ? '#b91c1c' : '#1e40af',
+                  }}
+                >
+                  {formatarValorFinanceiro(saldoFinanceiro)}
+                </strong>
+              </div>
+            </div>
+
+            <p
+              style={{
+                fontWeight: 700,
+                marginBottom: '24px',
+                color:
+                  situacaoFinanceira === 'POSITIVO'
+                    ? '#166534'
+                    : situacaoFinanceira === 'NEGATIVO'
+                    ? '#b91c1c'
+                    : '#64748b',
+              }}
+            >
+              Situação financeira:{' '}
+              {situacaoFinanceira === 'POSITIVO'
+                ? 'Saldo positivo'
+                : situacaoFinanceira === 'NEGATIVO'
+                ? 'Saldo negativo'
+                : 'Saldo zerado'}
             </p>
 
             <form

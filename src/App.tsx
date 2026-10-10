@@ -19,6 +19,80 @@ type LancamentoFinanceiro = {
   tipo: 'RECEITA' | 'DESPESA';
   valor: number;
 };
+
+// FASE 3 — MODELO UNIVERSAL DE DADOS
+
+type OrigemDados = {
+  sistema: string;
+  tipo: 'MANUAL' | 'CSV' | 'EXCEL' | 'API';
+  importadoEm: string;
+  identificadorExterno?: string;
+};
+
+type RegistroFinanceiroUniversal = {
+  id: string;
+  empresaId: string;
+  data: string;
+  descricao: string;
+  categoria: string;
+  tipo: 'RECEITA' | 'DESPESA';
+  valorCentavos: number;
+  moeda: string;
+  origem: OrigemDados;
+};
+
+type ClienteUniversal = {
+  id: string;
+  empresaId: string;
+  nome: string;
+  documento?: string;
+  telefone?: string;
+  email?: string;
+  origem: OrigemDados;
+};
+
+type ServicoUniversal = {
+  id: string;
+  empresaId: string;
+  descricao: string;
+  valorCentavos: number;
+  custoCentavos?: number;
+  moeda: string;
+  origem: OrigemDados;
+};
+
+type DadosUniversaisEmpresa = {
+  empresaId: string;
+  registrosFinanceiros: RegistroFinanceiroUniversal[];
+  clientes: ClienteUniversal[];
+  servicos: ServicoUniversal[];
+  atualizadoEm: string;
+};
+
+// FASE 3 — VALIDAÇÃO DOS REGISTROS FINANCEIROS UNIVERSAIS
+
+function validarRegistroFinanceiroUniversal(
+  registro: RegistroFinanceiroUniversal
+): boolean {
+  const dataValida =
+    /^\d{4}-\d{2}-\d{2}$/.test(registro.data) &&
+    !Number.isNaN(Date.parse(`${registro.data}T00:00:00`));
+
+  return (
+    registro.id.trim().length > 0 &&
+    registro.empresaId.trim().length > 0 &&
+    dataValida &&
+    registro.descricao.trim().length > 0 &&
+    registro.categoria.trim().length > 0 &&
+    (registro.tipo === 'RECEITA' || registro.tipo === 'DESPESA') &&
+    Number.isSafeInteger(registro.valorCentavos) &&
+    registro.valorCentavos >= 0 &&
+    registro.moeda === 'BRL' &&
+    registro.origem.sistema.trim().length > 0 &&
+    ['MANUAL', 'CSV', 'EXCEL', 'API'].includes(registro.origem.tipo)
+  );
+}
+
 type Alerta = {
   titulo: string;
   descricao: string;
@@ -107,17 +181,51 @@ function App() {
     (lancamento) => lancamento.empresaId === 'empresa_demo'
   );
 
-  const totalReceitas = lancamentosEmpresa.reduce(
-    (total, lancamento) =>
-      lancamento.tipo === 'RECEITA' ? total + lancamento.valor : total,
-    0
+  // FASE 3 — CONVERSÃO PARA O MODELO UNIVERSAL
+
+  const registrosFinanceirosUniversais: RegistroFinanceiroUniversal[] =
+    lancamentosEmpresa.map((lancamento) => ({
+      id: lancamento.id,
+      empresaId: lancamento.empresaId,
+      data: lancamento.data,
+      descricao: lancamento.descricao,
+      categoria: lancamento.categoria,
+      tipo: lancamento.tipo,
+      valorCentavos: Math.round(lancamento.valor * 100),
+      moeda: 'BRL',
+      origem: {
+        sistema: 'PREVANZIA',
+        tipo: 'MANUAL',
+        importadoEm: '',
+        identificadorExterno: lancamento.id,
+      },
+    }));
+
+  // FASE 3 — UTILIZAÇÃO SOMENTE DE REGISTROS VÁLIDOS
+
+  const registrosFinanceirosValidos = registrosFinanceirosUniversais.filter(
+    validarRegistroFinanceiroUniversal
   );
 
-  const totalDespesas = lancamentosEmpresa.reduce(
-    (total, lancamento) =>
-      lancamento.tipo === 'DESPESA' ? total + lancamento.valor : total,
-    0
-  );
+  const dadosUniversaisEmpresa: DadosUniversaisEmpresa = {
+    empresaId: 'empresa_demo',
+    registrosFinanceiros: registrosFinanceirosValidos,
+    clientes: [],
+    servicos: [],
+    atualizadoEm: '',
+  };
+
+  // FASE 3 — CÁLCULOS A PARTIR DOS DADOS UNIVERSAIS
+
+  const totalReceitas =
+    dadosUniversaisEmpresa.registrosFinanceiros
+      .filter((registro) => registro.tipo === 'RECEITA')
+      .reduce((total, registro) => total + registro.valorCentavos, 0) / 100;
+
+  const totalDespesas =
+    dadosUniversaisEmpresa.registrosFinanceiros
+      .filter((registro) => registro.tipo === 'DESPESA')
+      .reduce((total, registro) => total + registro.valorCentavos, 0) / 100;
 
   const saldoFinanceiro = totalReceitas - totalDespesas;
 

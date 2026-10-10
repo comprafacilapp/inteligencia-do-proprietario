@@ -452,7 +452,9 @@ function App() {
                 marginBottom: '20px',
               }}
             >
-              <p style={{ margin: '0 0 8px' }}>Impacto financeiro registrado</p>
+              <p style={{ margin: '0 0 8px' }}>
+                Ganhos financeiros registrados
+              </p>
 
               <strong
                 style={{
@@ -460,8 +462,11 @@ function App() {
                   color: '#214b58',
                 }}
               >
-                {Object.values(impactosDecisoes)
-                  .reduce((total, valor) => total + valor, 0)
+                {Object.entries(impactosDecisoes)
+                  .filter(
+                    ([indice]) => resultadosDecisoes[indice] === 'POSITIVO'
+                  )
+                  .reduce((total, [, valor]) => total + valor, 0)
                   .toLocaleString('pt-BR', {
                     style: 'currency',
                     currency: 'BRL',
@@ -469,7 +474,79 @@ function App() {
               </strong>
 
               <p style={{ fontSize: '13px', marginTop: '8px' }}>
-                Soma dos valores informados nas decisões.
+                Soma dos valores das decisões com resultado positivo.
+              </p>
+            </div>
+            {/* COLE O CÓDIGO NOVO AQUI */}
+            <div
+              style={{
+                padding: '20px',
+                background: '#fff1f0',
+                borderRadius: '12px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Perdas financeiras registradas
+              </p>
+
+              <strong
+                style={{
+                  fontSize: '28px',
+                  color: '#b42318',
+                }}
+              >
+                {Object.entries(impactosDecisoes)
+                  .filter(
+                    ([indice]) => resultadosDecisoes[indice] === 'NEGATIVO'
+                  )
+                  .reduce((total, [, valor]) => total + valor, 0)
+                  .toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+              </strong>
+
+              <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                Soma dos valores das decisões com resultado negativo.
+              </p>
+            </div>
+
+            <div
+              style={{
+                padding: '20px',
+                background: '#eef2ff',
+                borderRadius: '12px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>Saldo financeiro das decisões</p>
+
+              <strong
+                style={{
+                  fontSize: '28px',
+                  color: '#214b58',
+                }}
+              >
+                {(
+                  Object.entries(impactosDecisoes)
+                    .filter(
+                      ([indice]) => resultadosDecisoes[indice] === 'POSITIVO'
+                    )
+                    .reduce((total, [, valor]) => total + valor, 0) -
+                  Object.entries(impactosDecisoes)
+                    .filter(
+                      ([indice]) => resultadosDecisoes[indice] === 'NEGATIVO'
+                    )
+                    .reduce((total, [, valor]) => total + valor, 0)
+                ).toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </strong>
+
+              <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                Ganhos registrados menos perdas registradas.
               </p>
             </div>
 

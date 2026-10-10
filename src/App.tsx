@@ -516,6 +516,40 @@ function App() {
 
             <div
               style={{
+                padding: '16px 20px',
+                background: '#eef2ff',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>Taxa de sucesso das decisões</p>
+
+              <strong style={{ fontSize: '28px', color: '#3730a3' }}>
+                {(() => {
+                  const positivas = decisoes.filter(
+                    (_, indice) =>
+                      resultadosDecisoes[String(indice)] === 'POSITIVO'
+                  ).length;
+
+                  const negativas = decisoes.filter(
+                    (_, indice) =>
+                      resultadosDecisoes[String(indice)] === 'NEGATIVO'
+                  ).length;
+
+                  const avaliadas = positivas + negativas;
+
+                  return avaliadas === 0
+                    ? 'Aguardando avaliações'
+                    : `${((positivas / avaliadas) * 100)
+                        .toFixed(1)
+                        .replace('.', ',')}%`;
+                })()}
+              </strong>
+            </div>
+
+            <div
+              style={{
                 padding: '20px',
                 background: '#eaf6f5',
                 borderRadius: '12px',

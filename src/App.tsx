@@ -1,6 +1,24 @@
 import { useEffect, useState } from 'react';
 import './App.css';
 
+type DadosFinanceirosEmpresa = {
+  empresaId: string;
+  periodo: string;
+  receitas: number;
+  despesas: number;
+  contasAReceber: number;
+  contasAPagar: number;
+  atualizadoEm: string;
+};
+type LancamentoFinanceiro = {
+  id: string;
+  empresaId: string;
+  data: string;
+  descricao: string;
+  categoria: string;
+  tipo: 'RECEITA' | 'DESPESA';
+  valor: number;
+};
 type Alerta = {
   titulo: string;
   descricao: string;
@@ -33,8 +51,67 @@ const oportunidades = [
 
 function App() {
   const [periodo, setPeriodo] = useState('Este mês');
+  const [lancamentosFinanceiros, setLancamentosFinanceiros] = useState<
+    LancamentoFinanceiro[]
+  >(() => {
+    try {
+      const salvos = localStorage.getItem('prevanzia_lancamentos_financeiros');
+      const dados: unknown = salvos ? JSON.parse(salvos) : [];
+
+      return Array.isArray(dados) &&
+        dados.every(
+          (item) =>
+            item !== null &&
+            typeof item === 'object' &&
+            typeof item.id === 'string' &&
+            typeof item.empresaId === 'string' &&
+            typeof item.data === 'string' &&
+            typeof item.descricao === 'string' &&
+            typeof item.categoria === 'string' &&
+            (item.tipo === 'RECEITA' || item.tipo === 'DESPESA') &&
+            typeof item.valor === 'number' &&
+            Number.isFinite(item.valor) &&
+            item.valor >= 0
+        )
+        ? (dados as LancamentoFinanceiro[])
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(
+      'prevanzia_lancamentos_financeiros',
+      JSON.stringify(lancamentosFinanceiros)
+    );
+  }, [lancamentosFinanceiros]);
+
+  function adicionarLancamentoFinanceiro(lancamento: LancamentoFinanceiro) {
+    setLancamentosFinanceiros((anteriores) => {
+      const jaExiste = anteriores.some(
+        (item) =>
+          item.empresaId === lancamento.empresaId && item.id === lancamento.id
+      );
+
+      if (jaExiste) {
+        return anteriores;
+      }
+
+      return [...anteriores, lancamento];
+    });
+  }
+
   const [secao, setSecao] = useState('Visão geral');
   const [novaDecisao, setNovaDecisao] = useState('');
+  const [descricaoLancamento, setDescricaoLancamento] = useState('');
+  const [tipoLancamento, setTipoLancamento] = useState<'RECEITA' | 'DESPESA'>(
+    'RECEITA'
+  );
+  const [valorLancamento, setValorLancamento] = useState('');
+  const [categoriaLancamento, setCategoriaLancamento] = useState('');
+  const [dataLancamento, setDataLancamento] = useState(
+    new Date().toLocaleDateString('en-CA')
+  );
   const [decisoes, setDecisoes] = useState<string[]>(() => {
     try {
       const salvas = localStorage.getItem('prevanzia_decisoes');
@@ -108,6 +185,7 @@ function App() {
     'Oportunidades',
     'Decisões',
     'Resultados',
+    'Dados financeiros',
   ];
 
   return (
@@ -813,6 +891,238 @@ function App() {
             )}
           </section>
         )}
+
+        {secao === 'Dados financeiros' && (
+          <section className="painel">
+            <div className="painel-cabecalho">
+              <div>
+                <p className="sobretitulo">DADOS DA EMPRESA</p>
+                <h2>Lançamentos financeiros</h2>
+              </div>
+              <span className="contador">
+                {lancamentosFinanceiros.length} lançamentos
+              </span>
+            </div>
+
+            <p className="subtitulo">
+              Registre receitas e despesas para acompanhar a situação financeira
+              da empresa.
+            </p>
+
+            <form
+              onSubmit={(evento) => {
+                evento.preventDefault();
+
+                const descricao = descricaoLancamento.trim();
+                const categoria = categoriaLancamento.trim();
+                const valor = Number(valorLancamento.replace(',', '.'));
+
+                if (
+                  !descricao ||
+                  !categoria ||
+                  !dataLancamento ||
+                  !Number.isFinite(valor) ||
+                  valor <= 0
+                ) {
+                  alert('Preencha todos os campos com valores válidos.');
+                  return;
+                }
+
+                const novoLancamento: LancamentoFinanceiro = {
+                  id: crypto.randomUUID(),
+                  empresaId: 'empresa_demo',
+                  data: dataLancamento,
+                  descricao,
+                  categoria,
+                  tipo: tipoLancamento,
+                  valor,
+                };
+
+                adicionarLancamentoFinanceiro(novoLancamento);
+
+                setDescricaoLancamento('');
+                setCategoriaLancamento('');
+                setValorLancamento('');
+              }}
+              style={{
+                display: 'grid',
+                gap: '14px',
+                marginTop: '24px',
+                marginBottom: '28px',
+              }}
+            >
+              <label>
+                Descrição
+                <input
+                  type="text"
+                  required
+                  value={descricaoLancamento}
+                  onChange={(evento) =>
+                    setDescricaoLancamento(evento.target.value)
+                  }
+                  placeholder="Ex.: Lavagem de veículo"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    marginTop: '6px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                  }}
+                />
+              </label>
+
+              <label>
+                Tipo de lançamento
+                <select
+                  value={tipoLancamento}
+                  onChange={(evento) =>
+                    setTipoLancamento(
+                      evento.target.value as 'RECEITA' | 'DESPESA'
+                    )
+                  }
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '12px',
+                    marginTop: '6px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <option value="RECEITA">Receita</option>
+                  <option value="DESPESA">Despesa</option>
+                </select>
+              </label>
+
+              <label>
+                Categoria
+                <input
+                  type="text"
+                  required
+                  value={categoriaLancamento}
+                  onChange={(evento) =>
+                    setCategoriaLancamento(evento.target.value)
+                  }
+                  placeholder="Ex.: Serviços, vendas, combustível"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    marginTop: '6px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                  }}
+                />
+              </label>
+
+              <label>
+                Valor (R$)
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  required
+                  value={valorLancamento}
+                  onChange={(evento) => setValorLancamento(evento.target.value)}
+                  placeholder="Ex.: 1500.00"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    marginTop: '6px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                  }}
+                />
+              </label>
+
+              <label>
+                Data
+                <input
+                  type="date"
+                  required
+                  value={dataLancamento}
+                  onChange={(evento) => setDataLancamento(evento.target.value)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    marginTop: '6px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                  }}
+                />
+              </label>
+
+              <button
+                type="submit"
+                style={{
+                  background: '#214b58',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '14px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Registrar lançamento
+              </button>
+            </form>
+
+            <h3>Histórico financeiro</h3>
+
+            {lancamentosFinanceiros.length === 0 ? (
+              <p className="subtitulo">
+                Nenhum lançamento financeiro cadastrado.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
+                {lancamentosFinanceiros.map((lancamento) => (
+                  <article
+                    key={`${lancamento.empresaId}-${lancamento.id}`}
+                    style={{
+                      padding: '16px',
+                      borderRadius: '12px',
+                      background:
+                        lancamento.tipo === 'RECEITA' ? '#ecfdf5' : '#fef2f2',
+                    }}
+                  >
+                    <strong>{lancamento.descricao}</strong>
+
+                    <p style={{ margin: '8px 0' }}>
+                      {lancamento.tipo === 'RECEITA' ? 'Receita' : 'Despesa'}
+                      {' • '}
+                      {lancamento.categoria}
+                    </p>
+
+                    <p style={{ margin: '8px 0' }}>
+                      Data: {lancamento.data.split('-').reverse().join('/')}
+                    </p>
+
+                    <strong
+                      style={{
+                        color:
+                          lancamento.tipo === 'RECEITA' ? '#166534' : '#b91c1c',
+                      }}
+                    >
+                      {lancamento.valor.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </strong>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         <footer>PREVANZIA • Inteligência para decidir melhor</footer>
       </main>
     </div>

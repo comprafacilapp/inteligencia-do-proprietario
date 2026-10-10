@@ -655,6 +655,48 @@ function App() {
               </p>
             </div>
 
+            <div
+              style={{
+                padding: '20px',
+                background: '#f0f9ff',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Percentual de ganhos financeiros
+              </p>
+
+              <strong style={{ fontSize: '28px', color: '#0369a1' }}>
+                {(() => {
+                  const ganhos = Object.entries(impactosDecisoes)
+                    .filter(
+                      ([indice]) => resultadosDecisoes[indice] === 'POSITIVO'
+                    )
+                    .reduce((total, [, valor]) => total + valor, 0);
+
+                  const perdas = Object.entries(impactosDecisoes)
+                    .filter(
+                      ([indice]) => resultadosDecisoes[indice] === 'NEGATIVO'
+                    )
+                    .reduce((total, [, valor]) => total + valor, 0);
+
+                  const total = ganhos + perdas;
+
+                  return total === 0
+                    ? 'Aguardando resultados financeiros'
+                    : `${((ganhos / total) * 100)
+                        .toFixed(1)
+                        .replace('.', ',')}%`;
+                })()}
+              </strong>
+
+              <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                Participação dos ganhos no total de ganhos e perdas registrados.
+              </p>
+            </div>
+
             {decisoes.length === 0 ? (
               <p className="subtitulo">
                 Nenhuma decisão registrada para acompanhar.

@@ -443,6 +443,77 @@ function App() {
               Acompanhe as decisões registradas e os resultados que ainda
               precisam ser avaliados.
             </p>
+
+            <div
+              style={{
+                padding: '16px 20px',
+                background: '#f0fdf4',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Decisões com resultado positivo
+              </p>
+
+              <strong style={{ fontSize: '28px', color: '#166534' }}>
+                {
+                  decisoes.filter(
+                    (_, indice) =>
+                      resultadosDecisoes[String(indice)] === 'POSITIVO'
+                  ).length
+                }
+              </strong>
+            </div>
+
+            <div
+              style={{
+                padding: '16px 20px',
+                background: '#fff1f2',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Decisões com resultado negativo
+              </p>
+
+              <strong style={{ fontSize: '28px', color: '#b91c1c' }}>
+                {
+                  decisoes.filter(
+                    (_, indice) =>
+                      resultadosDecisoes[String(indice)] === 'NEGATIVO'
+                  ).length
+                }
+              </strong>
+            </div>
+
+            <div
+              style={{
+                padding: '16px 20px',
+                background: '#fff7ed',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Decisões pendentes de avaliação
+              </p>
+
+              <strong style={{ fontSize: '28px', color: '#c2410c' }}>
+                {
+                  decisoes.filter(
+                    (_, indice) =>
+                      !resultadosDecisoes[String(indice)] ||
+                      resultadosDecisoes[String(indice)] === 'PENDENTE'
+                  ).length
+                }
+              </strong>
+            </div>
+
             <div
               style={{
                 padding: '20px',

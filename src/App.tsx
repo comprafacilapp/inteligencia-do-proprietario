@@ -1,12 +1,11 @@
-
-import { useState } from 'react'
-import './App.css'
+import { useEffect, useState } from 'react';
+import './App.css';
 
 type Alerta = {
-  titulo: string
-  descricao: string
-  nivel: 'alto' | 'medio'
-}
+  titulo: string;
+  descricao: string;
+  nivel: 'alto' | 'medio';
+};
 
 const alertas: Alerta[] = [
   {
@@ -24,18 +23,54 @@ const alertas: Alerta[] = [
     descricao: 'Existem R$ 8.450 em recebimentos que precisam de atenção.',
     nivel: 'medio',
   },
-]
+];
 
 const oportunidades = [
   'Revisar serviços com margem abaixo do esperado.',
   'Identificar clientes com potencial de recompra.',
   'Negociar custos com fornecedores recorrentes.',
-]
+];
 
 function App() {
-  const [periodo, setPeriodo] = useState('Este mês')
-  const [secao, setSecao] = useState('Visão geral')
-  const [alertaSelecionado, setAlertaSelecionado] = useState<string | null>(null)
+  const [periodo, setPeriodo] = useState('Este mês');
+  const [secao, setSecao] = useState('Visão geral');
+  const [novaDecisao, setNovaDecisao] = useState('');
+  const [decisoes, setDecisoes] = useState<string[]>(() => {
+    try {
+      const salvas = localStorage.getItem('prevanzia_decisoes');
+      const dados: unknown = salvas ? JSON.parse(salvas) : [];
+
+      return Array.isArray(dados) &&
+        dados.every((item) => typeof item === 'string')
+        ? dados
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  const [alertaSelecionado, setAlertaSelecionado] = useState<string | null>(
+    null
+  );
+  const [resultadosDecisoes, setResultadosDecisoes] = useState<
+    Record<string, 'PENDENTE' | 'POSITIVO' | 'NEGATIVO'>
+  >(() => {
+    try {
+      const salvos = localStorage.getItem('prevanzia_resultados');
+      return salvos ? JSON.parse(salvos) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      'prevanzia_resultados',
+      JSON.stringify(resultadosDecisoes)
+    );
+  }, [resultadosDecisoes]);
+  useEffect(() => {
+    localStorage.setItem('prevanzia_decisoes', JSON.stringify(decisoes));
+  }, [decisoes]);
 
   const secoes = [
     'Visão geral',
@@ -43,7 +78,7 @@ function App() {
     'Oportunidades',
     'Decisões',
     'Resultados',
-  ]
+  ];
 
   return (
     <div className="app">
@@ -100,107 +135,183 @@ function App() {
         <div className="aviso-demo">
           <strong>Modo demonstração</strong>
           <span>
-            Os valores abaixo são fictícios. Ainda não há dados reais conectados.
+            Os valores abaixo são fictícios. Ainda não há dados reais
+            conectados.
           </span>
         </div>
 
-        <section className="saude">
-          <div>
-            <p className="sobretitulo">SAÚDE DA EMPRESA</p>
-            <h2>Atenção necessária</h2>
-            <p>
-              Encontramos sinais que merecem análise antes das próximas decisões.
-            </p>
-          </div>
-          <span className="saude-indicador">● Atenção</span>
-        </section>
+        {secao === 'Visão geral' && (
+          <>
+            <section className="saude">
+              <div>
+                <p className="sobretitulo">SAÚDE DA EMPRESA</p>
+                <h2>Atenção necessária</h2>
+                <p>
+                  Encontramos sinais que merecem análise antes das próximas
+                  decisões.
+                </p>
+              </div>
+              <span className="saude-indicador">● Atenção</span>
+            </section>
 
-        <section className="indicadores">
-          <article className="indicador">
-            <span>Receita estimada</span>
-            <strong>R$ 84.500</strong>
-            <small className="positivo">↑ 8,2% em relação ao período anterior</small>
-          </article>
+            <section className="indicadores">
+              <article className="indicador">
+                <span>Receita estimada</span>
+                <strong>R$ 84.500</strong>
+                <small className="positivo">
+                  ↑ 8,2% em relação ao período anterior
+                </small>
+              </article>
 
-          <article className="indicador">
-            <span>Despesas estimadas</span>
-            <strong>R$ 65.065</strong>
-            <small className="negativo">↑ 18% em relação ao período anterior</small>
-          </article>
+              <article className="indicador">
+                <span>Despesas estimadas</span>
+                <strong>R$ 65.065</strong>
+                <small className="negativo">
+                  ↑ 18% em relação ao período anterior
+                </small>
+              </article>
 
-          <article className="indicador">
-            <span>Resultado estimado</span>
-            <strong>R$ 19.435</strong>
-            <small>Receita menos despesas informadas</small>
-          </article>
+              <article className="indicador">
+                <span>Resultado estimado</span>
+                <strong>R$ 19.435</strong>
+                <small>Receita menos despesas informadas</small>
+              </article>
 
-          <article className="indicador">
-            <span>Margem estimada</span>
-            <strong>23%</strong>
-            <small className="negativo">↓ 8 pontos percentuais</small>
-          </article>
-        </section>
+              <article className="indicador">
+                <span>Margem estimada</span>
+                <strong>23%</strong>
+                <small className="negativo">↓ 8 pontos percentuais</small>
+              </article>
+            </section>
 
-        <div className="duas-colunas">
+            <div className="duas-colunas">
+              <section className="painel">
+                <div className="painel-cabecalho">
+                  <div>
+                    <p className="sobretitulo">O QUE MUDOU?</p>
+                    <h2>Alertas importantes</h2>
+                  </div>
+                  <span className="contador">{alertas.length} alertas</span>
+                </div>
+
+                {alertas.map((alerta) => (
+                  <article
+                    className="alerta"
+                    key={alerta.titulo}
+                    onClick={() =>
+                      setAlertaSelecionado(
+                        alertaSelecionado === alerta.titulo
+                          ? null
+                          : alerta.titulo
+                      )
+                    }
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <span className={`alerta-marcador ${alerta.nivel}`} />
+                    <div>
+                      <h3>{alerta.titulo}</h3>
+                      <p>{alerta.descricao}</p>
+
+                      {alertaSelecionado === alerta.titulo && (
+                        <div
+                          style={{
+                            marginTop: '12px',
+                            padding: '14px',
+                            background: '#f3f6fb',
+                            borderRadius: '10px',
+                            fontSize: '13px',
+                            lineHeight: '1.6',
+                          }}
+                        >
+                          <strong>Diagnóstico preliminar</strong>
+                          <p>
+                            Este alerta merece investigação. Compare os dados do
+                            período atual com os anteriores para identificar
+                            possíveis causas.
+                          </p>
+                          <p>
+                            <strong>Próxima ação:</strong> confira os registros
+                            financeiros relacionados antes de tomar uma decisão.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </section>
+
+              <section className="painel">
+                <div className="painel-cabecalho">
+                  <div>
+                    <p className="sobretitulo">POSSIBILIDADES</p>
+                    <h2>Oportunidades identificadas</h2>
+                  </div>
+                </div>
+
+                {oportunidades.map((item, indice) => (
+                  <article className="oportunidade" key={item}>
+                    <span>{String(indice + 1).padStart(2, '0')}</span>
+                    <p>{item}</p>
+                  </article>
+                ))}
+              </section>
+            </div>
+
+            <section className="recomendacao">
+              <div>
+                <p className="sobretitulo">PRÓXIMA DECISÃO</p>
+                <h2>Investigue a redução da margem</h2>
+                <p>
+                  Compare custos, descontos e preços praticados antes de decidir
+                  qualquer reajuste.
+                </p>
+              </div>
+              <span className="recomendacao-etiqueta">
+                Recomendação demonstrativa
+              </span>
+            </section>
+          </>
+        )}
+        {secao === 'Diagnóstico' && (
           <section className="painel">
             <div className="painel-cabecalho">
               <div>
-                <p className="sobretitulo">O QUE MUDOU?</p>
-                <h2>Alertas importantes</h2>
+                <p className="sobretitulo">ANÁLISE EMPRESARIAL</p>
+                <h2>Diagnóstico financeiro</h2>
               </div>
-              <span className="contador">{alertas.length} alertas</span>
+              <span className="contador">3 pontos de atenção</span>
             </div>
 
             {alertas.map((alerta) => (
-              <article
-              className="alerta"
-              key={alerta.titulo}
-              onClick={() =>
-                setAlertaSelecionado(
-                  alertaSelecionado === alerta.titulo ? null : alerta.titulo
-                )
-              }
-              style={{ cursor: 'pointer' }}
-            >
+              <article className="alerta" key={alerta.titulo}>
                 <span className={`alerta-marcador ${alerta.nivel}`} />
                 <div>
                   <h3>{alerta.titulo}</h3>
                   <p>{alerta.descricao}</p>
-
-                  {alertaSelecionado === alerta.titulo && (
-  <div
-    style={{
-      marginTop: '12px',
-      padding: '14px',
-      background: '#f3f6fb',
-      borderRadius: '10px',
-      fontSize: '13px',
-      lineHeight: '1.6',
-    }}
-  >
-    <strong>Diagnóstico preliminar</strong>
-    <p>
-      Este alerta merece investigação. Compare os dados do período
-      atual com os anteriores para identificar possíveis causas.
-    </p>
-    <p>
-      <strong>Próxima ação:</strong> confira os registros financeiros
-      relacionados antes de tomar uma decisão.
-    </p>
-  </div>
-)}
-
                 </div>
               </article>
             ))}
-          </section>
 
+            <div className="recomendacao">
+              <div>
+                <p className="sobretitulo">ORIENTAÇÃO INICIAL</p>
+                <h2>Investigue antes de decidir</h2>
+                <p>
+                  Compare receitas, despesas e recebimentos dos períodos
+                  anteriores para investigar as possíveis causas.
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+        {secao === 'Oportunidades' && (
           <section className="painel">
             <div className="painel-cabecalho">
               <div>
-                <p className="sobretitulo">POSSIBILIDADES</p>
-                <h2>Oportunidades identificadas</h2>
+                <p className="sobretitulo">POTENCIAL DE MELHORIA</p>
+                <h2>Oportunidades para a empresa</h2>
               </div>
+              <span className="contador">3 sugestões</span>
             </div>
 
             {oportunidades.map((item, indice) => (
@@ -209,27 +320,177 @@ function App() {
                 <p>{item}</p>
               </article>
             ))}
+
+            <div className="recomendacao">
+              <div>
+                <p className="sobretitulo">PRÓXIMO PASSO</p>
+                <h2>Escolha uma oportunidade para investigar</h2>
+                <p>
+                  Avalie o potencial de ganho, os custos e os riscos antes de
+                  transformar uma sugestão em decisão.
+                </p>
+              </div>
+            </div>
           </section>
-        </div>
+        )}
+        {secao === 'Decisões' && (
+          <section className="painel">
+            <div className="painel-cabecalho">
+              <div>
+                <p className="sobretitulo">PLANO DE AÇÃO</p>
+                <h2>Minhas decisões</h2>
+              </div>
+              <span className="contador">{decisoes.length} registradas</span>
+            </div>
 
-        <section className="recomendacao">
-          <div>
-            <p className="sobretitulo">PRÓXIMA DECISÃO</p>
-            <h2>Investigue a redução da margem</h2>
-            <p>
-              Compare custos, descontos e preços praticados antes de decidir
-              qualquer reajuste.
+            <form
+              onSubmit={(evento) => {
+                evento.preventDefault();
+
+                if (!novaDecisao.trim()) return;
+
+                setDecisoes([...decisoes, novaDecisao.trim()]);
+                setNovaDecisao('');
+              }}
+            >
+              <input
+                type="text"
+                value={novaDecisao}
+                onChange={(evento) => setNovaDecisao(evento.target.value)}
+                placeholder="Ex.: Revisar preços dos serviços"
+                aria-label="Nova decisão"
+                style={{
+                  width: '100%',
+                  padding: '13px',
+                  border: '1px solid #dce4ef',
+                  borderRadius: '10px',
+                  marginBottom: '12px',
+                }}
+              />
+
+              <button
+                type="submit"
+                style={{
+                  background: '#214b58',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '12px 18px',
+                  fontWeight: 700,
+                }}
+              >
+                Registrar decisão
+              </button>
+            </form>
+
+            {decisoes.length === 0 ? (
+              <p className="subtitulo">
+                Nenhuma decisão registrada nesta sessão.
+              </p>
+            ) : (
+              <div style={{ marginTop: '20px' }}>
+                {decisoes.map((decisao, indice) => (
+                  <article className="oportunidade" key={indice}>
+                    <span>{String(indice + 1).padStart(2, '0')}</span>
+                    <p>{decisao}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+        {secao === 'Resultados' && (
+          <section className="painel">
+            <div className="painel-cabecalho">
+              <div>
+                <p className="sobretitulo">ACOMPANHAMENTO</p>
+                <h2>Resultados das decisões</h2>
+              </div>
+              <span className="contador">{decisoes.length} decisões</span>
+            </div>
+
+            <p className="subtitulo">
+              Acompanhe as decisões registradas e os resultados que ainda
+              precisam ser avaliados.
             </p>
-          </div>
-          <span className="recomendacao-etiqueta">Recomendação demonstrativa</span>
-        </section>
 
-        <footer>
-          PREVANZIA • Inteligência para decidir melhor
-        </footer>
+            {decisoes.length === 0 ? (
+              <p className="subtitulo">
+                Nenhuma decisão registrada para acompanhar.
+              </p>
+            ) : (
+              <div style={{ marginTop: '20px' }}>
+                {decisoes.map((decisao, indice) => (
+                  <article className="oportunidade" key={indice}>
+                    <span>{String(indice + 1).padStart(2, '0')}</span>
+                    <div>
+                      <div>
+                        <strong>{decisao}</strong>
+
+                        {/* CÓDIGO NOVO COMEÇA AQUI */}
+                        <p>
+                          Resultado:{' '}
+                          {resultadosDecisoes[String(indice)] || 'PENDENTE'}
+                        </p>
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: '8px',
+                            flexWrap: 'wrap',
+                            marginTop: '10px',
+                          }}
+                        >
+                          {(['PENDENTE', 'POSITIVO', 'NEGATIVO'] as const).map(
+                            (resultado) => (
+                              <button
+                                key={resultado}
+                                type="button"
+                                onClick={() =>
+                                  setResultadosDecisoes((anteriores) => ({
+                                    ...anteriores,
+                                    [String(indice)]: resultado,
+                                  }))
+                                }
+                                style={{
+                                  padding: '8px 12px',
+                                  borderRadius: '8px',
+                                  border: '1px solid #dce4ef',
+                                  cursor: 'pointer',
+                                  background:
+                                    resultadosDecisoes[String(indice)] ===
+                                    resultado
+                                      ? '#214b58'
+                                      : '#ffffff',
+                                  color:
+                                    resultadosDecisoes[String(indice)] ===
+                                    resultado
+                                      ? '#ffffff'
+                                      : '#214b58',
+                                }}
+                              >
+                                {resultado === 'PENDENTE'
+                                  ? 'Pendente'
+                                  : resultado === 'POSITIVO'
+                                  ? 'Positivo'
+                                  : 'Negativo'}
+                              </button>
+                            )
+                          )}
+                        </div>
+                        {/* CÓDIGO NOVO TERMINA AQUI */}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+        <footer>PREVANZIA • Inteligência para decidir melhor</footer>
       </main>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

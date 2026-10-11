@@ -20,15 +20,29 @@ type LancamentoFinanceiro = {
   valor: number;
   origem?: 'MANUAL' | 'CSV' | 'EXCEL' | 'API';
   importadoEm?: string;
+  arquivoOrigem?: string;
+  importacaoId?: string;
 };
 
 // FASE 3 — MODELO UNIVERSAL DE DADOS
+
+type HistoricoImportacao = {
+  id: string;
+  empresaId: string;
+  nomeArquivo: string;
+  importadoEm: string;
+  novos: number;
+  duplicados: number;
+  totalRegistros: number;
+};
 
 type OrigemDados = {
   sistema: string;
   tipo: 'MANUAL' | 'CSV' | 'EXCEL' | 'API';
   importadoEm: string;
   identificadorExterno?: string;
+  arquivoOrigem?: string;
+  importacaoId?: string;
 };
 
 type RegistroFinanceiroUniversal = {
@@ -161,6 +175,44 @@ function App() {
       JSON.stringify(lancamentosFinanceiros)
     );
   }, [lancamentosFinanceiros]);
+  // FASE 4 — HISTÓRICO PERSISTENTE DE IMPORTAÇÕES CSV
+  const [historicoImportacoes, setHistoricoImportacoes] = useState<
+    HistoricoImportacao[]
+  >(() => {
+    try {
+      const salvos = localStorage.getItem('prevanzia_historico_importacoes');
+      const dados: unknown = salvos ? JSON.parse(salvos) : [];
+      if (!Array.isArray(dados)) return [];
+      return dados.filter(
+        (item): item is HistoricoImportacao =>
+          item !== null &&
+          typeof item === 'object' &&
+          typeof item.id === 'string' &&
+          typeof item.empresaId === 'string' &&
+          typeof item.nomeArquivo === 'string' &&
+          typeof item.importadoEm === 'string' &&
+          typeof item.novos === 'number' &&
+          Number.isSafeInteger(item.novos) &&
+          item.novos >= 0 &&
+          typeof item.duplicados === 'number' &&
+          Number.isSafeInteger(item.duplicados) &&
+          item.duplicados >= 0 &&
+          typeof item.totalRegistros === 'number' &&
+          Number.isSafeInteger(item.totalRegistros) &&
+          item.totalRegistros >= 0
+      );
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      'prevanzia_historico_importacoes',
+      JSON.stringify(historicoImportacoes)
+    );
+  }, [historicoImportacoes]);
+
   // FASE 4 — IMPORTAÇÃO DE DADOS FINANCEIROS POR CSV
 
   // FASE 4 — IMPORTAÇÃO CSV COM VALIDAÇÃO E PROTEÇÃO CONTRA DUPLICAÇÃO
@@ -294,6 +346,8 @@ function App() {
       const indice = (nome: string) => cabecalho.indexOf(nome);
 
       const novosLancamentos: LancamentoFinanceiro[] = [];
+      const importacaoId = crypto.randomUUID();
+      const importadoEm = new Date().toISOString();
 
       // Identificador estável para evitar importações repetidas.
       const chaveRegistro = (
@@ -402,7 +456,9 @@ function App() {
           tipo: tipoTexto as 'RECEITA' | 'DESPESA',
           valor,
           origem: 'CSV',
-          importadoEm: new Date().toISOString(),
+          importadoEm,
+          arquivoOrigem: arquivo.name,
+          importacaoId,
         };
 
         const chave = chaveRegistro(registro);
@@ -416,16 +472,26 @@ function App() {
         novosLancamentos.push(registro);
       }
 
-      if (novosLancamentos.length === 0) {
-        alert(
-          `Nenhum lançamento novo. ${duplicados} registro(s) duplicado(s).`
-        );
-        return;
-      }
+      // Registra também tentativas válidas em que todos os itens eram duplicados.
+      const eventoImportacao: HistoricoImportacao = {
+        id: importacaoId,
+        empresaId: 'empresa_demo',
+        nomeArquivo: arquivo.name,
+        importadoEm,
+        novos: novosLancamentos.length,
+        duplicados,
+        totalRegistros: linhas.length - 1,
+      };
 
-      setLancamentosFinanceiros((anteriores) => [
+      if (novosLancamentos.length > 0) {
+        setLancamentosFinanceiros((anteriores) => [
+          ...anteriores,
+          ...novosLancamentos,
+        ]);
+      }
+      setHistoricoImportacoes((anteriores) => [
+        eventoImportacao,
         ...anteriores,
-        ...novosLancamentos,
       ]);
 
       alert(
@@ -475,6 +541,8 @@ function App() {
         tipo: lancamento.origem ?? 'MANUAL',
         importadoEm: lancamento.importadoEm ?? '',
         identificadorExterno: lancamento.id,
+        arquivoOrigem: lancamento.arquivoOrigem,
+        importacaoId: lancamento.importacaoId,
       },
     }));
 
@@ -1505,6 +1573,58 @@ function App() {
               </p>
             </div>
 
+            {/* FASE 4 — HISTÓRICO DE IMPORTAÇÕES */}
+            <div
+              style={{
+                padding: '20px',
+                border: '1px solid #dce4ef',
+                borderRadius: '14px',
+                background: '#ffffff',
+                marginBottom: '28px',
+              }}
+            >
+              <h3 style={{ marginTop: 0 }}>Histórico de importações CSV</h3>
+              <p style={{ color: '#64748b', fontSize: '13px' }}>
+                Arquivos processados neste navegador, inclusive importações sem
+                registros novos. Arquivos anteriores à implantação deste
+                histórico não aparecem aqui.
+              </p>
+              {historicoImportacoes.length === 0 ? (
+                <p className="subtitulo">
+                  Nenhuma importação registrada ainda.
+                </p>
+              ) : (
+                <div
+                  style={{ display: 'grid', gap: '12px', marginTop: '16px' }}
+                >
+                  {historicoImportacoes
+                    .filter((item) => item.empresaId === 'empresa_demo')
+                    .map((item) => (
+                      <article
+                        key={item.id}
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '10px',
+                          padding: '14px',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
+                        <strong>{item.nomeArquivo}</strong>
+                        <p style={{ margin: '6px 0', fontSize: '13px' }}>
+                          Importado em:{' '}
+                          {new Date(item.importadoEm).toLocaleString('pt-BR')}
+                        </p>
+                        <p style={{ margin: '6px 0', fontSize: '13px' }}>
+                          {item.totalRegistros} registro(s) no arquivo •{' '}
+                          {item.novos} novo(s) • {item.duplicados} duplicado(s)
+                        </p>
+                      </article>
+                    ))}
+                </div>
+              )}
+            </div>
+
             <form
               onSubmit={(evento) => {
                 evento.preventDefault();
@@ -1717,6 +1837,41 @@ function App() {
                         ? 'Sistema integrado'
                         : 'Lançamento manual'}
                     </p>
+
+                    {lancamento.arquivoOrigem && (
+                      <p
+                        style={{
+                          margin: '8px 0',
+                          fontSize: '13px',
+                          color: '#475569',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
+                        Arquivo: {lancamento.arquivoOrigem}
+                      </p>
+                    )}
+
+                    {lancamento.importadoEm && (
+                      <p
+                        style={{
+                          margin: '8px 0',
+                          fontSize: '13px',
+                          color: '#475569',
+                        }}
+                      >
+                        Importado em:{' '}
+                        {new Date(lancamento.importadoEm).toLocaleString(
+                          'pt-BR',
+                          {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          }
+                        )}
+                      </p>
+                    )}
 
                     <strong
                       style={{

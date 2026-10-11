@@ -1701,6 +1701,23 @@ function App() {
                       Data: {lancamento.data.split('-').reverse().join('/')}
                     </p>
 
+                    <p
+                      style={{
+                        margin: '8px 0',
+                        fontSize: '13px',
+                        color: '#475569',
+                      }}
+                    >
+                      Origem:{' '}
+                      {lancamento.origem === 'CSV'
+                        ? 'Arquivo CSV'
+                        : lancamento.origem === 'EXCEL'
+                        ? 'Arquivo Excel'
+                        : lancamento.origem === 'API'
+                        ? 'Sistema integrado'
+                        : 'Lançamento manual'}
+                    </p>
+
                     <strong
                       style={{
                         color:

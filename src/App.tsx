@@ -9,7 +9,1674 @@ type DadosFinanceirosEmpresa = {
   contasAReceber: number;
   contasAPagar: number;
   atualizadoEm: string;
+};import { useEffect, useState } from 'react';
+import './App.css';
+
+type DadosFinanceirosEmpresa = {
+  empresaId: string;
+  periodo: string;
+  receitas: number;
+  despesas: number;
+  contasAReceber: number;
+  contasAPagar: number;
+  atualizadoEm: string;
 };
+type LancamentoFinanceiro = {
+  id: string;
+  empresaId: string;
+  data: string;
+  descricao: string;
+  categoria: string;
+  tipo: 'RECEITA' | 'DESPESA';
+  valor: number;
+};
+
+// FASE 3 — MODELO UNIVERSAL DE DADOS
+
+type OrigemDados = {
+  sistema: string;
+  tipo: 'MANUAL' | 'CSV' | 'EXCEL' | 'API';
+  importadoEm: string;
+  identificadorExterno?: string;
+};
+
+type RegistroFinanceiroUniversal = {
+  id: string;
+  empresaId: string;
+  data: string;
+  descricao: string;
+  categoria: string;
+  tipo: 'RECEITA' | 'DESPESA';
+  valorCentavos: number;
+  moeda: string;
+  origem: OrigemDados;
+};
+
+type ClienteUniversal = {
+  id: string;
+  empresaId: string;
+  nome: string;
+  documento?: string;
+  telefone?: string;
+  email?: string;
+  origem: OrigemDados;
+};
+
+type ServicoUniversal = {
+  id: string;
+  empresaId: string;
+  descricao: string;
+  valorCentavos: number;
+  custoCentavos?: number;
+  moeda: string;
+  origem: OrigemDados;
+};
+
+type DadosUniversaisEmpresa = {
+  empresaId: string;
+  registrosFinanceiros: RegistroFinanceiroUniversal[];
+  clientes: ClienteUniversal[];
+  servicos: ServicoUniversal[];
+  atualizadoEm: string;
+};
+
+// FASE 3 — VALIDAÇÃO DOS REGISTROS FINANCEIROS UNIVERSAIS
+
+function validarRegistroFinanceiroUniversal(
+  registro: RegistroFinanceiroUniversal
+): boolean {
+  const dataValida =
+    /^\d{4}-\d{2}-\d{2}$/.test(registro.data) &&
+    !Number.isNaN(Date.parse(`${registro.data}T00:00:00`));
+
+  return (
+    registro.id.trim().length > 0 &&
+    registro.empresaId.trim().length > 0 &&
+    dataValida &&
+    registro.descricao.trim().length > 0 &&
+    registro.categoria.trim().length > 0 &&
+    (registro.tipo === 'RECEITA' || registro.tipo === 'DESPESA') &&
+    Number.isSafeInteger(registro.valorCentavos) &&
+    registro.valorCentavos >= 0 &&
+    registro.moeda === 'BRL' &&
+    registro.origem.sistema.trim().length > 0 &&
+    ['MANUAL', 'CSV', 'EXCEL', 'API'].includes(registro.origem.tipo)
+  );
+}
+
+type Alerta = {
+  titulo: string;
+  descricao: string;
+  nivel: 'alto' | 'medio';
+};
+
+const alertas: Alerta[] = [
+  {
+    titulo: 'Queda na margem de lucro',
+    descricao: 'A margem estimada caiu de 31% para 23% neste período.',
+    nivel: 'alto',
+  },
+  {
+    titulo: 'Despesas em crescimento',
+    descricao: 'As despesas aumentaram 18% em relação ao período anterior.',
+    nivel: 'medio',
+  },
+  {
+    titulo: 'Recebimentos atrasados',
+    descricao: 'Existem R$ 8.450 em recebimentos que precisam de atenção.',
+    nivel: 'medio',
+  },
+];
+
+const oportunidades = [
+  'Revisar serviços com margem abaixo do esperado.',
+  'Identificar clientes com potencial de recompra.',
+  'Negociar custos com fornecedores recorrentes.',
+];
+
+function App() {
+  const [periodo, setPeriodo] = useState('Este mês');
+  const [lancamentosFinanceiros, setLancamentosFinanceiros] = useState<
+    LancamentoFinanceiro[]
+  >(() => {
+    try {
+      const salvos = localStorage.getItem('prevanzia_lancamentos_financeiros');
+      const dados: unknown = salvos ? JSON.parse(salvos) : [];
+
+      return Array.isArray(dados) &&
+        dados.every(
+          (item) =>
+            item !== null &&
+            typeof item === 'object' &&
+            typeof item.id === 'string' &&
+            typeof item.empresaId === 'string' &&
+            typeof item.data === 'string' &&
+            typeof item.descricao === 'string' &&
+            typeof item.categoria === 'string' &&
+            (item.tipo === 'RECEITA' || item.tipo === 'DESPESA') &&
+            typeof item.valor === 'number' &&
+            Number.isFinite(item.valor) &&
+            item.valor >= 0
+        )
+        ? (dados as LancamentoFinanceiro[])
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(
+      'prevanzia_lancamentos_financeiros',
+      JSON.stringify(lancamentosFinanceiros)
+    );
+  }, [lancamentosFinanceiros]);
+  // FASE 4 — IMPORTAÇÃO DE DADOS FINANCEIROS POR CSV
+
+  // FASE 4 — IMPORTAÇÃO CSV COM VALIDAÇÃO E PROTEÇÃO CONTRA DUPLICAÇÃO
+
+  async function importarArquivoCSV(arquivo: File) {
+    try {
+      if (arquivo.size === 0) {
+        alert('O arquivo CSV está vazio.');
+        return;
+      }
+
+      if (arquivo.size > 5 * 1024 * 1024) {
+        alert('O arquivo CSV deve ter no máximo 5 MB.');
+        return;
+      }
+
+      const conteudo = (await arquivo.text())
+        .replace(/^\uFEFF/, '')
+        .replace(/\r\n?/g, '\n');
+
+      if (!conteudo.trim()) {
+        alert('O arquivo CSV está vazio.');
+        return;
+      }
+
+      const primeiraLinha = conteudo.split('\n')[0];
+
+      const separador =
+        (primeiraLinha.match(/;/g) || []).length >=
+        (primeiraLinha.match(/,/g) || []).length
+          ? ';'
+          : ',';
+
+      // Lê CSV respeitando aspas e separadores dentro dos campos.
+      const linhas: string[][] = [];
+      let linha: string[] = [];
+      let campo = '';
+      let entreAspas = false;
+
+      for (let i = 0; i < conteudo.length; i++) {
+        const caractere = conteudo[i];
+
+        if (caractere === '"') {
+          if (entreAspas && conteudo[i + 1] === '"') {
+            campo += '"';
+            i++;
+          } else {
+            entreAspas = !entreAspas;
+          }
+        } else if (caractere === separador && !entreAspas) {
+          linha.push(campo.trim());
+          campo = '';
+        } else if (caractere === '\n' && !entreAspas) {
+          linha.push(campo.trim());
+
+          if (linha.some((valor) => valor.length > 0)) {
+            linhas.push(linha);
+          }
+
+          linha = [];
+          campo = '';
+        } else {
+          campo += caractere;
+        }
+      }
+
+      if (entreAspas) {
+        alert('CSV inválido: existem aspas sem fechamento.');
+        return;
+      }
+
+      linha.push(campo.trim());
+
+      if (linha.some((valor) => valor.length > 0)) {
+        linhas.push(linha);
+      }
+
+      if (linhas.length < 2) {
+        alert('O arquivo CSV não contém lançamentos.');
+        return;
+      }
+
+      const cabecalho = linhas[0].map((valor) => valor.trim().toLowerCase());
+
+      const obrigatorios = ['data', 'descricao', 'categoria', 'tipo', 'valor'];
+
+      if (
+        !obrigatorios.every((nome) => cabecalho.includes(nome)) ||
+        new Set(cabecalho).size !== cabecalho.length
+      ) {
+        alert(
+          'Cabeçalho inválido. Utilize as colunas: data, descricao, categoria, tipo, valor.'
+        );
+        return;
+      }
+
+      const indice = (nome: string) => cabecalho.indexOf(nome);
+
+      const novosLancamentos: LancamentoFinanceiro[] = [];
+
+      // Identificador estável para evitar importações repetidas.
+      const chaveRegistro = (
+        registro: Pick<
+          LancamentoFinanceiro,
+          'empresaId' | 'data' | 'descricao' | 'categoria' | 'tipo' | 'valor'
+        >
+      ) =>
+        JSON.stringify([
+          registro.empresaId,
+          registro.data,
+          registro.descricao.trim().toLowerCase(),
+          registro.categoria.trim().toLowerCase(),
+          registro.tipo,
+          Math.round(registro.valor * 100),
+        ]);
+
+      const chavesExistentes = new Set(
+        lancamentosFinanceiros.map(chaveRegistro)
+      );
+
+      let duplicados = 0;
+
+      for (let i = 1; i < linhas.length; i++) {
+        const colunas = linhas[i];
+
+        if (colunas.length !== cabecalho.length) {
+          alert(
+            `Linha ${
+              i + 1
+            }: quantidade de colunas incorreta. Importação cancelada.`
+          );
+          return;
+        }
+
+        const data = colunas[indice('data')];
+        const descricao = colunas[indice('descricao')].trim();
+        const categoria = colunas[indice('categoria')].trim();
+        const tipoTexto = colunas[indice('tipo')].trim().toUpperCase();
+
+        const valorTexto = colunas[indice('valor')].trim();
+
+        // Aceita 1500.50 ou 1500,50.
+        // Não aceita separadores de milhar nesta versão.
+        const formatoValorValido = /^\d+(?:[.,]\d{1,2})?$/.test(valorTexto);
+
+        const valor = formatoValorValido
+          ? Number(valorTexto.replace(',', '.'))
+          : NaN;
+
+        const dataFormatoValido = /^\d{4}-\d{2}-\d{2}$/.test(data);
+
+        const dataObjeto = dataFormatoValido
+          ? new Date(`${data}T12:00:00Z`)
+          : new Date(NaN);
+
+        const dataValida =
+          !Number.isNaN(dataObjeto.getTime()) &&
+          dataObjeto.toISOString().slice(0, 10) === data;
+
+        const tipoValido = tipoTexto === 'RECEITA' || tipoTexto === 'DESPESA';
+
+        if (
+          !dataValida ||
+          !descricao ||
+          !categoria ||
+          !tipoValido ||
+          !formatoValorValido ||
+          !Number.isFinite(valor) ||
+          valor <= 0 ||
+          !Number.isSafeInteger(Math.round(valor * 100))
+        ) {
+          alert(`Linha ${i + 1}: dados inválidos. Importação cancelada.`);
+          return;
+        }
+
+        const registro: LancamentoFinanceiro = {
+          id: crypto.randomUUID(),
+          empresaId: 'empresa_demo',
+          data,
+          descricao,
+          categoria,
+          tipo: tipoTexto as 'RECEITA' | 'DESPESA',
+          valor,
+        };
+
+        const chave = chaveRegistro(registro);
+
+        if (chavesExistentes.has(chave)) {
+          duplicados++;
+          continue;
+        }
+
+        chavesExistentes.add(chave);
+        novosLancamentos.push(registro);
+      }
+
+      if (novosLancamentos.length === 0) {
+        alert(
+          `Nenhum lançamento novo. ${duplicados} registro(s) duplicado(s).`
+        );
+        return;
+      }
+
+      setLancamentosFinanceiros((anteriores) => [
+        ...anteriores,
+        ...novosLancamentos,
+      ]);
+
+      alert(
+        `${novosLancamentos.length} lançamento(s) importado(s).\n` +
+          `${duplicados} duplicado(s) ignorado(s).`
+      );
+    } catch {
+      alert('Não foi possível processar o arquivo CSV.');
+    }
+  }
+
+  function adicionarLancamentoFinanceiro(lancamento: LancamentoFinanceiro) {
+    setLancamentosFinanceiros((anteriores) => {
+      const jaExiste = anteriores.some(
+        (item) =>
+          item.empresaId === lancamento.empresaId && item.id === lancamento.id
+      );
+
+      if (jaExiste) {
+        return anteriores;
+      }
+
+      return [...anteriores, lancamento];
+    });
+  }
+
+  // MARCO 11 — RESUMO FINANCEIRO AUTOMÁTICO
+
+  const lancamentosEmpresa = lancamentosFinanceiros.filter(
+    (lancamento) => lancamento.empresaId === 'empresa_demo'
+  );
+
+  // FASE 3 — CONVERSÃO PARA O MODELO UNIVERSAL
+
+  const registrosFinanceirosUniversais: RegistroFinanceiroUniversal[] =
+    lancamentosEmpresa.map((lancamento) => ({
+      id: lancamento.id,
+      empresaId: lancamento.empresaId,
+      data: lancamento.data,
+      descricao: lancamento.descricao,
+      categoria: lancamento.categoria,
+      tipo: lancamento.tipo,
+      valorCentavos: Math.round(lancamento.valor * 100),
+      moeda: 'BRL',
+      origem: {
+        sistema: 'PREVANZIA',
+        tipo: 'MANUAL',
+        importadoEm: '',
+        identificadorExterno: lancamento.id,
+      },
+    }));
+
+  // FASE 3 — UTILIZAÇÃO SOMENTE DE REGISTROS VÁLIDOS
+
+  const registrosFinanceirosValidos = registrosFinanceirosUniversais.filter(
+    validarRegistroFinanceiroUniversal
+  );
+
+  const dadosUniversaisEmpresa: DadosUniversaisEmpresa = {
+    empresaId: 'empresa_demo',
+    registrosFinanceiros: registrosFinanceirosValidos,
+    clientes: [],
+    servicos: [],
+    atualizadoEm: '',
+  };
+
+  // FASE 3 — CÁLCULOS A PARTIR DOS DADOS UNIVERSAIS
+
+  const totalReceitas =
+    dadosUniversaisEmpresa.registrosFinanceiros
+      .filter((registro) => registro.tipo === 'RECEITA')
+      .reduce((total, registro) => total + registro.valorCentavos, 0) / 100;
+
+  const totalDespesas =
+    dadosUniversaisEmpresa.registrosFinanceiros
+      .filter((registro) => registro.tipo === 'DESPESA')
+      .reduce((total, registro) => total + registro.valorCentavos, 0) / 100;
+
+  const saldoFinanceiro = totalReceitas - totalDespesas;
+
+  const situacaoFinanceira =
+    saldoFinanceiro > 0
+      ? 'POSITIVO'
+      : saldoFinanceiro < 0
+      ? 'NEGATIVO'
+      : 'ZERADO';
+
+  const formatarValorFinanceiro = (valor: number) =>
+    valor.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+
+  const [secao, setSecao] = useState('Visão geral');
+  const [novaDecisao, setNovaDecisao] = useState('');
+  const [descricaoLancamento, setDescricaoLancamento] = useState('');
+  const [tipoLancamento, setTipoLancamento] = useState<'RECEITA' | 'DESPESA'>(
+    'RECEITA'
+  );
+  const [valorLancamento, setValorLancamento] = useState('');
+  const [categoriaLancamento, setCategoriaLancamento] = useState('');
+  const [dataLancamento, setDataLancamento] = useState(
+    new Date().toLocaleDateString('en-CA')
+  );
+  const [decisoes, setDecisoes] = useState<string[]>(() => {
+    try {
+      const salvas = localStorage.getItem('prevanzia_decisoes');
+      const dados: unknown = salvas ? JSON.parse(salvas) : [];
+
+      return Array.isArray(dados) &&
+        dados.every((item) => typeof item === 'string')
+        ? dados
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  const [alertaSelecionado, setAlertaSelecionado] = useState<string | null>(
+    null
+  );
+  const [resultadosDecisoes, setResultadosDecisoes] = useState<
+    Record<string, 'PENDENTE' | 'POSITIVO' | 'NEGATIVO'>
+  >(() => {
+    try {
+      const salvos = localStorage.getItem('prevanzia_resultados');
+      return salvos ? JSON.parse(salvos) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      'prevanzia_resultados',
+      JSON.stringify(resultadosDecisoes)
+    );
+  }, [resultadosDecisoes]);
+
+  const [impactosDecisoes, setImpactosDecisoes] = useState<
+    Record<string, number>
+  >(() => {
+    try {
+      const salvos = localStorage.getItem('prevanzia_impactos');
+      const dados: unknown = salvos ? JSON.parse(salvos) : {};
+
+      if (typeof dados !== 'object' || dados === null || Array.isArray(dados)) {
+        return {};
+      }
+
+      return Object.fromEntries(
+        Object.entries(dados).filter(
+          ([, valor]) =>
+            typeof valor === 'number' && Number.isFinite(valor) && valor >= 0
+        )
+      );
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      'prevanzia_impactos',
+      JSON.stringify(impactosDecisoes)
+    );
+  }, [impactosDecisoes]);
+
+  useEffect(() => {
+    localStorage.setItem('prevanzia_decisoes', JSON.stringify(decisoes));
+  }, [decisoes]);
+
+  const secoes = [
+    'Visão geral',
+    'Diagnóstico',
+    'Oportunidades',
+    'Decisões',
+    'Resultados',
+    'Dados financeiros',
+  ];
+
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <div className="marca">
+          <div className="marca-icone">P</div>
+          <div>
+            <strong>PREVANZIA</strong>
+            <small>Inteligência empresarial</small>
+          </div>
+        </div>
+
+        <p className="menu-titulo">PAINEL DO PROPRIETÁRIO</p>
+
+        <nav className="menu">
+          {secoes.map((item) => (
+            <button
+              key={item}
+              className={secao === item ? 'ativo' : ''}
+              onClick={() => setSecao(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-rodape">
+          <span className="status-ponto" />
+          Ambiente de demonstração
+        </div>
+      </aside>
+
+      <main className="conteudo">
+        <header className="topo">
+          <div>
+            <p className="sobretitulo">CENTRAL DE INTELIGÊNCIA</p>
+            <h1>{secao}</h1>
+            <p className="subtitulo">
+              Entenda o que acontece na empresa e decida com mais segurança.
+            </p>
+          </div>
+
+          <select
+            value={periodo}
+            onChange={(evento) => setPeriodo(evento.target.value)}
+            aria-label="Selecionar período"
+          >
+            <option>Este mês</option>
+            <option>Mês anterior</option>
+            <option>Últimos 90 dias</option>
+          </select>
+        </header>
+
+        <div className="aviso-demo">
+          <strong>Modo demonstração</strong>
+          <span>
+            Os valores abaixo são fictícios. Ainda não há dados reais
+            conectados.
+          </span>
+        </div>
+
+        {secao === 'Visão geral' && (
+          <>
+            <section className="saude">
+              <div>
+                <p className="sobretitulo">SAÚDE DA EMPRESA</p>
+                <h2>Atenção necessária</h2>
+                <p>
+                  Encontramos sinais que merecem análise antes das próximas
+                  decisões.
+                </p>
+              </div>
+              <span className="saude-indicador">● Atenção</span>
+            </section>
+
+            <section className="indicadores">
+              <article className="indicador">
+                <span>Receita estimada</span>
+                <strong>R$ 84.500</strong>
+                <small className="positivo">
+                  ↑ 8,2% em relação ao período anterior
+                </small>
+              </article>
+
+              <article className="indicador">
+                <span>Despesas estimadas</span>
+                <strong>R$ 65.065</strong>
+                <small className="negativo">
+                  ↑ 18% em relação ao período anterior
+                </small>
+              </article>
+
+              <article className="indicador">
+                <span>Resultado estimado</span>
+                <strong>R$ 19.435</strong>
+                <small>Receita menos despesas informadas</small>
+              </article>
+
+              <article className="indicador">
+                <span>Margem estimada</span>
+                <strong>23%</strong>
+                <small className="negativo">↓ 8 pontos percentuais</small>
+              </article>
+            </section>
+
+            <div className="duas-colunas">
+              <section className="painel">
+                <div className="painel-cabecalho">
+                  <div>
+                    <p className="sobretitulo">O QUE MUDOU?</p>
+                    <h2>Alertas importantes</h2>
+                  </div>
+                  <span className="contador">{alertas.length} alertas</span>
+                </div>
+
+                {alertas.map((alerta) => (
+                  <article
+                    className="alerta"
+                    key={alerta.titulo}
+                    onClick={() =>
+                      setAlertaSelecionado(
+                        alertaSelecionado === alerta.titulo
+                          ? null
+                          : alerta.titulo
+                      )
+                    }
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <span className={`alerta-marcador ${alerta.nivel}`} />
+                    <div>
+                      <h3>{alerta.titulo}</h3>
+                      <p>{alerta.descricao}</p>
+
+                      {alertaSelecionado === alerta.titulo && (
+                        <div
+                          style={{
+                            marginTop: '12px',
+                            padding: '14px',
+                            background: '#f3f6fb',
+                            borderRadius: '10px',
+                            fontSize: '13px',
+                            lineHeight: '1.6',
+                          }}
+                        >
+                          <strong>Diagnóstico preliminar</strong>
+                          <p>
+                            Este alerta merece investigação. Compare os dados do
+                            período atual com os anteriores para identificar
+                            possíveis causas.
+                          </p>
+                          <p>
+                            <strong>Próxima ação:</strong> confira os registros
+                            financeiros relacionados antes de tomar uma decisão.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </section>
+
+              <section className="painel">
+                <div className="painel-cabecalho">
+                  <div>
+                    <p className="sobretitulo">POSSIBILIDADES</p>
+                    <h2>Oportunidades identificadas</h2>
+                  </div>
+                </div>
+
+                {oportunidades.map((item, indice) => (
+                  <article className="oportunidade" key={item}>
+                    <span>{String(indice + 1).padStart(2, '0')}</span>
+                    <p>{item}</p>
+                  </article>
+                ))}
+              </section>
+            </div>
+
+            <section className="recomendacao">
+              <div>
+                <p className="sobretitulo">PRÓXIMA DECISÃO</p>
+                <h2>Investigue a redução da margem</h2>
+                <p>
+                  Compare custos, descontos e preços praticados antes de decidir
+                  qualquer reajuste.
+                </p>
+              </div>
+              <span className="recomendacao-etiqueta">
+                Recomendação demonstrativa
+              </span>
+            </section>
+          </>
+        )}
+        {secao === 'Diagnóstico' && (
+          <section className="painel">
+            <div className="painel-cabecalho">
+              <div>
+                <p className="sobretitulo">ANÁLISE EMPRESARIAL</p>
+                <h2>Diagnóstico financeiro</h2>
+              </div>
+              <span className="contador">3 pontos de atenção</span>
+            </div>
+
+            {alertas.map((alerta) => (
+              <article className="alerta" key={alerta.titulo}>
+                <span className={`alerta-marcador ${alerta.nivel}`} />
+                <div>
+                  <h3>{alerta.titulo}</h3>
+                  <p>{alerta.descricao}</p>
+                </div>
+              </article>
+            ))}
+
+            <div className="recomendacao">
+              <div>
+                <p className="sobretitulo">ORIENTAÇÃO INICIAL</p>
+                <h2>Investigue antes de decidir</h2>
+                <p>
+                  Compare receitas, despesas e recebimentos dos períodos
+                  anteriores para investigar as possíveis causas.
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+        {secao === 'Oportunidades' && (
+          <section className="painel">
+            <div className="painel-cabecalho">
+              <div>
+                <p className="sobretitulo">POTENCIAL DE MELHORIA</p>
+                <h2>Oportunidades para a empresa</h2>
+              </div>
+              <span className="contador">3 sugestões</span>
+            </div>
+
+            {oportunidades.map((item, indice) => (
+              <article className="oportunidade" key={item}>
+                <span>{String(indice + 1).padStart(2, '0')}</span>
+                <p>{item}</p>
+              </article>
+            ))}
+
+            <div className="recomendacao">
+              <div>
+                <p className="sobretitulo">PRÓXIMO PASSO</p>
+                <h2>Escolha uma oportunidade para investigar</h2>
+                <p>
+                  Avalie o potencial de ganho, os custos e os riscos antes de
+                  transformar uma sugestão em decisão.
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+        {secao === 'Decisões' && (
+          <section className="painel">
+            <div className="painel-cabecalho">
+              <div>
+                <p className="sobretitulo">PLANO DE AÇÃO</p>
+                <h2>Minhas decisões</h2>
+              </div>
+              <span className="contador">{decisoes.length} registradas</span>
+            </div>
+
+            <form
+              onSubmit={(evento) => {
+                evento.preventDefault();
+
+                if (!novaDecisao.trim()) return;
+
+                setDecisoes([...decisoes, novaDecisao.trim()]);
+                setNovaDecisao('');
+              }}
+            >
+              <input
+                type="text"
+                value={novaDecisao}
+                onChange={(evento) => setNovaDecisao(evento.target.value)}
+                placeholder="Ex.: Revisar preços dos serviços"
+                aria-label="Nova decisão"
+                style={{
+                  width: '100%',
+                  padding: '13px',
+                  border: '1px solid #dce4ef',
+                  borderRadius: '10px',
+                  marginBottom: '12px',
+                }}
+              />
+
+              <button
+                type="submit"
+                style={{
+                  background: '#214b58',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '12px 18px',
+                  fontWeight: 700,
+                }}
+              >
+                Registrar decisão
+              </button>
+            </form>
+
+            {decisoes.length === 0 ? (
+              <p className="subtitulo">
+                Nenhuma decisão registrada nesta sessão.
+              </p>
+            ) : (
+              <div style={{ marginTop: '20px' }}>
+                {decisoes.map((decisao, indice) => (
+                  <article className="oportunidade" key={indice}>
+                    <span>{String(indice + 1).padStart(2, '0')}</span>
+                    <p>{decisao}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+        {secao === 'Resultados' && (
+          <section className="painel">
+            <div className="painel-cabecalho">
+              <div>
+                <p className="sobretitulo">ACOMPANHAMENTO</p>
+                <h2>Resultados das decisões</h2>
+              </div>
+              <span className="contador">{decisoes.length} decisões</span>
+            </div>
+
+            <p className="subtitulo">
+              Acompanhe as decisões registradas e os resultados que ainda
+              precisam ser avaliados.
+            </p>
+
+            <div
+              style={{
+                padding: '16px 20px',
+                background: '#f0fdf4',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Decisões com resultado positivo
+              </p>
+
+              <strong style={{ fontSize: '28px', color: '#166534' }}>
+                {
+                  decisoes.filter(
+                    (_, indice) =>
+                      resultadosDecisoes[String(indice)] === 'POSITIVO'
+                  ).length
+                }
+              </strong>
+            </div>
+
+            <div
+              style={{
+                padding: '16px 20px',
+                background: '#fff1f2',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Decisões com resultado negativo
+              </p>
+
+              <strong style={{ fontSize: '28px', color: '#b91c1c' }}>
+                {
+                  decisoes.filter(
+                    (_, indice) =>
+                      resultadosDecisoes[String(indice)] === 'NEGATIVO'
+                  ).length
+                }
+              </strong>
+            </div>
+
+            <div
+              style={{
+                padding: '16px 20px',
+                background: '#fff7ed',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Decisões pendentes de avaliação
+              </p>
+
+              <strong style={{ fontSize: '28px', color: '#c2410c' }}>
+                {
+                  decisoes.filter(
+                    (_, indice) =>
+                      !resultadosDecisoes[String(indice)] ||
+                      resultadosDecisoes[String(indice)] === 'PENDENTE'
+                  ).length
+                }
+              </strong>
+            </div>
+
+            <div
+              style={{
+                padding: '16px 20px',
+                background: '#eef2ff',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>Taxa de sucesso das decisões</p>
+
+              <strong style={{ fontSize: '28px', color: '#3730a3' }}>
+                {(() => {
+                  const positivas = decisoes.filter(
+                    (_, indice) =>
+                      resultadosDecisoes[String(indice)] === 'POSITIVO'
+                  ).length;
+
+                  const negativas = decisoes.filter(
+                    (_, indice) =>
+                      resultadosDecisoes[String(indice)] === 'NEGATIVO'
+                  ).length;
+
+                  const avaliadas = positivas + negativas;
+
+                  return avaliadas === 0
+                    ? 'Aguardando avaliações'
+                    : `${((positivas / avaliadas) * 100)
+                        .toFixed(1)
+                        .replace('.', ',')}%`;
+                })()}
+              </strong>
+            </div>
+
+            <div
+              style={{
+                padding: '20px',
+                background: '#eaf6f5',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Ganhos financeiros registrados
+              </p>
+
+              <strong
+                style={{
+                  fontSize: '28px',
+                  color: '#214b58',
+                }}
+              >
+                {Object.entries(impactosDecisoes)
+                  .filter(
+                    ([indice]) => resultadosDecisoes[indice] === 'POSITIVO'
+                  )
+                  .reduce((total, [, valor]) => total + valor, 0)
+                  .toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+              </strong>
+
+              <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                Soma dos valores das decisões com resultado positivo.
+              </p>
+            </div>
+            {/* COLE O CÓDIGO NOVO AQUI */}
+            <div
+              style={{
+                padding: '20px',
+                background: '#fff1f0',
+                borderRadius: '12px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Perdas financeiras registradas
+              </p>
+
+              <strong
+                style={{
+                  fontSize: '28px',
+                  color: '#b42318',
+                }}
+              >
+                {Object.entries(impactosDecisoes)
+                  .filter(
+                    ([indice]) => resultadosDecisoes[indice] === 'NEGATIVO'
+                  )
+                  .reduce((total, [, valor]) => total + valor, 0)
+                  .toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+              </strong>
+
+              <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                Soma dos valores das decisões com resultado negativo.
+              </p>
+            </div>
+
+            <div
+              style={{
+                padding: '20px',
+                background: '#eef2ff',
+                borderRadius: '12px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>Saldo financeiro das decisões</p>
+
+              <strong
+                style={{
+                  fontSize: '28px',
+                  color: '#214b58',
+                }}
+              >
+                {(
+                  Object.entries(impactosDecisoes)
+                    .filter(
+                      ([indice]) => resultadosDecisoes[indice] === 'POSITIVO'
+                    )
+                    .reduce((total, [, valor]) => total + valor, 0) -
+                  Object.entries(impactosDecisoes)
+                    .filter(
+                      ([indice]) => resultadosDecisoes[indice] === 'NEGATIVO'
+                    )
+                    .reduce((total, [, valor]) => total + valor, 0)
+                ).toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </strong>
+
+              <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                Ganhos registrados menos perdas registradas.
+              </p>
+            </div>
+
+            <div
+              style={{
+                padding: '20px',
+                background: '#f0f9ff',
+                borderRadius: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              <p style={{ margin: '0 0 8px' }}>
+                Percentual de ganhos financeiros
+              </p>
+
+              <strong style={{ fontSize: '28px', color: '#0369a1' }}>
+                {(() => {
+                  const ganhos = Object.entries(impactosDecisoes)
+                    .filter(
+                      ([indice]) => resultadosDecisoes[indice] === 'POSITIVO'
+                    )
+                    .reduce((total, [, valor]) => total + valor, 0);
+
+                  const perdas = Object.entries(impactosDecisoes)
+                    .filter(
+                      ([indice]) => resultadosDecisoes[indice] === 'NEGATIVO'
+                    )
+                    .reduce((total, [, valor]) => total + valor, 0);
+
+                  const total = ganhos + perdas;
+
+                  return total === 0
+                    ? 'Aguardando resultados financeiros'
+                    : `${((ganhos / total) * 100)
+                        .toFixed(1)
+                        .replace('.', ',')}%`;
+                })()}
+              </strong>
+
+              <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                Participação dos ganhos no total de ganhos e perdas registrados.
+              </p>
+            </div>
+
+            {decisoes.length === 0 ? (
+              <p className="subtitulo">
+                Nenhuma decisão registrada para acompanhar.
+              </p>
+            ) : (
+              <div style={{ marginTop: '20px' }}>
+                {decisoes.map((decisao, indice) => (
+                  <article className="oportunidade" key={indice}>
+                    <span>{String(indice + 1).padStart(2, '0')}</span>
+                    <div>
+                      <div>
+                        <strong>{decisao}</strong>
+                        {/* CÓDIGO NOVO COMEÇA AQUI */}
+                        <p>
+                          Resultado:{' '}
+                          {resultadosDecisoes[String(indice)] || 'PENDENTE'}
+                        </p>
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: '8px',
+                            flexWrap: 'wrap',
+                            marginTop: '10px',
+                          }}
+                        >
+                          {(['PENDENTE', 'POSITIVO', 'NEGATIVO'] as const).map(
+                            (resultado) => (
+                              <button
+                                key={resultado}
+                                type="button"
+                                onClick={() =>
+                                  setResultadosDecisoes((anteriores) => ({
+                                    ...anteriores,
+                                    [String(indice)]: resultado,
+                                  }))
+                                }
+                                style={{
+                                  padding: '8px 12px',
+                                  borderRadius: '8px',
+                                  border: '1px solid #dce4ef',
+                                  cursor: 'pointer',
+                                  background:
+                                    resultadosDecisoes[String(indice)] ===
+                                    resultado
+                                      ? '#214b58'
+                                      : '#ffffff',
+                                  color:
+                                    resultadosDecisoes[String(indice)] ===
+                                    resultado
+                                      ? '#ffffff'
+                                      : '#214b58',
+                                }}
+                              >
+                                {resultado === 'PENDENTE'
+                                  ? 'Pendente'
+                                  : resultado === 'POSITIVO'
+                                  ? 'Positivo'
+                                  : 'Negativo'}
+                              </button>
+                            )
+                          )}
+                        </div>
+                        <div style={{ marginTop: '16px' }}>
+                          <label
+                            htmlFor={`impacto-${indice}`}
+                            style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              fontWeight: 600,
+                            }}
+                          >
+                            Impacto financeiro (R$)
+                          </label>
+
+                          <input
+                            id={`impacto-${indice}`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Ex.: 1500,00"
+                            value={impactosDecisoes[String(indice)] ?? ''}
+                            onChange={(evento) => {
+                              const valor = evento.target.value;
+
+                              setImpactosDecisoes((anteriores) => {
+                                const atualizados = { ...anteriores };
+
+                                if (valor === '') {
+                                  delete atualizados[String(indice)];
+                                } else {
+                                  const numero = Number(valor);
+
+                                  if (Number.isFinite(numero) && numero >= 0) {
+                                    atualizados[String(indice)] = numero;
+                                  }
+                                }
+
+                                return atualizados;
+                              });
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '12px',
+                              border: '1px solid #dce4ef',
+                              borderRadius: '10px',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {secao === 'Dados financeiros' && (
+          <section className="painel">
+            <div className="painel-cabecalho">
+              <div>
+                <p className="sobretitulo">DADOS DA EMPRESA</p>
+                <h2>Lançamentos financeiros</h2>
+              </div>
+              <span className="contador">
+                {lancamentosFinanceiros.length} lançamentos
+              </span>
+            </div>
+
+            <p className="subtitulo">
+              Registre receitas e despesas para acompanhar a situação financeira
+              da empresa.
+            </p>
+
+            {/* MARCO 11 — RESUMO FINANCEIRO AUTOMÁTICO */}
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '16px',
+                marginTop: '24px',
+                marginBottom: '20px',
+              }}
+            >
+              <div
+                style={{
+                  padding: '20px',
+                  borderRadius: '14px',
+                  background: '#ecfdf5',
+                  border: '1px solid #bbf7d0',
+                }}
+              >
+                <p style={{ margin: '0 0 10px', color: '#166534' }}>
+                  Total de receitas
+                </p>
+                <strong style={{ fontSize: '24px', color: '#166534' }}>
+                  {formatarValorFinanceiro(totalReceitas)}
+                </strong>
+              </div>
+
+              <div
+                style={{
+                  padding: '20px',
+                  borderRadius: '14px',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                }}
+              >
+                <p style={{ margin: '0 0 10px', color: '#991b1b' }}>
+                  Total de despesas
+                </p>
+                <strong style={{ fontSize: '24px', color: '#991b1b' }}>
+                  {formatarValorFinanceiro(totalDespesas)}
+                </strong>
+              </div>
+
+              <div
+                style={{
+                  padding: '20px',
+                  borderRadius: '14px',
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                }}
+              >
+                <p style={{ margin: '0 0 10px', color: '#1e40af' }}>
+                  Saldo financeiro
+                </p>
+                <strong
+                  style={{
+                    fontSize: '24px',
+                    color: saldoFinanceiro < 0 ? '#b91c1c' : '#1e40af',
+                  }}
+                >
+                  {formatarValorFinanceiro(saldoFinanceiro)}
+                </strong>
+              </div>
+            </div>
+
+            <p
+              style={{
+                fontWeight: 700,
+                marginBottom: '24px',
+                color:
+                  situacaoFinanceira === 'POSITIVO'
+                    ? '#166534'
+                    : situacaoFinanceira === 'NEGATIVO'
+                    ? '#b91c1c'
+                    : '#64748b',
+              }}
+            >
+              Situação financeira:{' '}
+              {situacaoFinanceira === 'POSITIVO'
+                ? 'Saldo positivo'
+                : situacaoFinanceira === 'NEGATIVO'
+                ? 'Saldo negativo'
+                : 'Saldo zerado'}
+            </p>
+
+            {/* FASE 4 — IMPORTAÇÃO DE ARQUIVOS CSV */}
+
+            <div
+              style={{
+                padding: '22px',
+                marginBottom: '28px',
+                border: '1px solid #dce4ef',
+                borderRadius: '14px',
+                background: '#f8fafc',
+              }}
+            >
+              <p className="sobretitulo">ENTRADA DE DADOS</p>
+
+              <h3 style={{ marginTop: '8px' }}>Importar dados financeiros</h3>
+
+              <p
+                style={{
+                  color: '#64748b',
+                  lineHeight: 1.6,
+                  marginBottom: '18px',
+                }}
+              >
+                Selecione um arquivo CSV para carregar receitas e despesas na
+                PREVANZIA.
+              </p>
+
+              <label
+                htmlFor="arquivo-csv-prevanzia"
+                style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  fontWeight: 600,
+                }}
+              >
+                Arquivo CSV
+              </label>
+
+              <input
+                id="arquivo-csv-prevanzia"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={async (evento) => {
+                  const arquivo = evento.target.files?.[0];
+
+                  if (!arquivo) {
+                    return;
+                  }
+
+                  if (!arquivo.name.toLowerCase().endsWith('.csv')) {
+                    alert('Selecione um arquivo no formato CSV.');
+                    evento.target.value = '';
+                    return;
+                  }
+
+                  await importarArquivoCSV(arquivo);
+
+                  evento.target.value = '';
+                }}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '12px',
+                  border: '1px solid #dce4ef',
+                  borderRadius: '10px',
+                  background: '#ffffff',
+                }}
+              />
+
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: '#64748b',
+                  marginTop: '14px',
+                  lineHeight: 1.6,
+                }}
+              >
+                Colunas necessárias: data, descricao, categoria, tipo e valor.
+              </p>
+
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: '#b45309',
+                  marginTop: '8px',
+                  lineHeight: 1.6,
+                }}
+              >
+                Versão de testes: utilize apenas arquivos fictícios. A proteção
+                contra importações duplicadas ainda será implementada.
+              </p>
+            </div>
+
+            <form
+              onSubmit={(evento) => {
+                evento.preventDefault();
+
+                const descricao = descricaoLancamento.trim();
+                const categoria = categoriaLancamento.trim();
+                const valor = Number(valorLancamento.replace(',', '.'));
+
+                if (
+                  !descricao ||
+                  !categoria ||
+                  !dataLancamento ||
+                  !Number.isFinite(valor) ||
+                  valor <= 0
+                ) {
+                  alert('Preencha todos os campos com valores válidos.');
+                  return;
+                }
+
+                const novoLancamento: LancamentoFinanceiro = {
+                  id: crypto.randomUUID(),
+                  empresaId: 'empresa_demo',
+                  data: dataLancamento,
+                  descricao,
+                  categoria,
+                  tipo: tipoLancamento,
+                  valor,
+                };
+
+                adicionarLancamentoFinanceiro(novoLancamento);
+
+                setDescricaoLancamento('');
+                setCategoriaLancamento('');
+                setValorLancamento('');
+              }}
+              style={{
+                display: 'grid',
+                gap: '14px',
+                marginTop: '24px',
+                marginBottom: '28px',
+              }}
+            >
+              <label>
+                Descrição
+                <input
+                  type="text"
+                  required
+                  value={descricaoLancamento}
+                  onChange={(evento) =>
+                    setDescricaoLancamento(evento.target.value)
+                  }
+                  placeholder="Ex.: Lavagem de veículo"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    marginTop: '6px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                  }}
+                />
+              </label>
+
+              <label>
+                Tipo de lançamento
+                <select
+                  value={tipoLancamento}
+                  onChange={(evento) =>
+                    setTipoLancamento(
+                      evento.target.value as 'RECEITA' | 'DESPESA'
+                    )
+                  }
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '12px',
+                    marginTop: '6px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <option value="RECEITA">Receita</option>
+                  <option value="DESPESA">Despesa</option>
+                </select>
+              </label>
+
+              <label>
+                Categoria
+                <input
+                  type="text"
+                  required
+                  value={categoriaLancamento}
+                  onChange={(evento) =>
+                    setCategoriaLancamento(evento.target.value)
+                  }
+                  placeholder="Ex.: Serviços, vendas, combustível"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    marginTop: '6px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                  }}
+                />
+              </label>
+
+              <label>
+                Valor (R$)
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  required
+                  value={valorLancamento}
+                  onChange={(evento) => setValorLancamento(evento.target.value)}
+                  placeholder="Ex.: 1500.00"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    marginTop: '6px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                  }}
+                />
+              </label>
+
+              <label>
+                Data
+                <input
+                  type="date"
+                  required
+                  value={dataLancamento}
+                  onChange={(evento) => setDataLancamento(evento.target.value)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    marginTop: '6px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                  }}
+                />
+              </label>
+
+              <button
+                type="submit"
+                style={{
+                  background: '#214b58',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '14px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Registrar lançamento
+              </button>
+            </form>
+
+            <h3>Histórico financeiro</h3>
+
+            {lancamentosFinanceiros.length === 0 ? (
+              <p className="subtitulo">
+                Nenhum lançamento financeiro cadastrado.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
+                {lancamentosFinanceiros.map((lancamento) => (
+                  <article
+                    key={`${lancamento.empresaId}-${lancamento.id}`}
+                    style={{
+                      padding: '16px',
+                      borderRadius: '12px',
+                      background:
+                        lancamento.tipo === 'RECEITA' ? '#ecfdf5' : '#fef2f2',
+                    }}
+                  >
+                    <strong>{lancamento.descricao}</strong>
+
+                    <p style={{ margin: '8px 0' }}>
+                      {lancamento.tipo === 'RECEITA' ? 'Receita' : 'Despesa'}
+                      {' • '}
+                      {lancamento.categoria}
+                    </p>
+
+                    <p style={{ margin: '8px 0' }}>
+                      Data: {lancamento.data.split('-').reverse().join('/')}
+                    </p>
+
+                    <strong
+                      style={{
+                        color:
+                          lancamento.tipo === 'RECEITA' ? '#166534' : '#b91c1c',
+                      }}
+                    >
+                      {lancamento.valor.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </strong>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        <footer>PREVANZIA • Inteligência para decidir melhor</footer>
+      </main>
+    </div>
+  );
+}
+
+export default App;
+
 type LancamentoFinanceiro = {
   id: string;
   empresaId: string;

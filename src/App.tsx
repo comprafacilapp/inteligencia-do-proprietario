@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
 import './App.css';
 
-type DadosFinanceirosEmpresa = {
-  empresaId: string;
-  periodo: string;
-  receitas: number;
-  despesas: number;
-  contasAReceber: number;
-  contasAPagar: number;
-  atualizadoEm: string;
-};
 type LancamentoFinanceiro = {
   id: string;
   empresaId: string;

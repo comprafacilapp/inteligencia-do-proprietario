@@ -1,0 +1,26 @@
+{
+  "id": "/inteligencia-do-proprietario/",
+  "name": "PREVANZIA — Inteligência Empresarial",
+  "short_name": "PREVANZIA",
+  "description": "Inteligência para decidir melhor.",
+  "lang": "pt-BR",
+  "start_url": "/inteligencia-do-proprietario/",
+  "scope": "/inteligencia-do-proprietario/",
+  "display": "standalone",
+  "background_color": "#f3f6fb",
+  "theme_color": "#102238",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

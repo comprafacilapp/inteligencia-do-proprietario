@@ -18,6 +18,8 @@ type LancamentoFinanceiro = {
   categoria: string;
   tipo: 'RECEITA' | 'DESPESA';
   valor: number;
+  origem?: 'MANUAL' | 'CSV' | 'EXCEL' | 'API';
+  importadoEm?: string;
 };
 
 // FASE 3 — MODELO UNIVERSAL DE DADOS
@@ -399,6 +401,8 @@ function App() {
           categoria,
           tipo: tipoTexto as 'RECEITA' | 'DESPESA',
           valor,
+          origem: 'CSV',
+          importadoEm: new Date().toISOString(),
         };
 
         const chave = chaveRegistro(registro);
@@ -468,8 +472,8 @@ function App() {
       moeda: 'BRL',
       origem: {
         sistema: 'PREVANZIA',
-        tipo: 'MANUAL',
-        importadoEm: '',
+        tipo: lancamento.origem ?? 'MANUAL',
+        importadoEm: lancamento.importadoEm ?? '',
         identificadorExterno: lancamento.id,
       },
     }));

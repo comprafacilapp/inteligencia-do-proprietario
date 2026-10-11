@@ -314,6 +314,83 @@ function calcularDiagnostico(
   };
 }
 
+// INTELIGÊNCIA COMPARATIVA — períodos consecutivos de mesma duração.
+// Comparações são descritivas e dependem da cobertura dos lançamentos.
+type LinhaComparativa = {
+  titulo: string;
+  atual: number;
+  anterior: number;
+  diferenca: number;
+  percentual: number | null;
+};
+
+function somarTipoComparativo(
+  registros: RegistroFinanceiroUniversal[],
+  tipo: 'RECEITA' | 'DESPESA'
+): number {
+  return (
+    registros
+      .filter((item) => item.tipo === tipo)
+      .reduce((total, item) => total + item.valorCentavos, 0) / 100
+  );
+}
+
+function criarLinhaComparativa(
+  titulo: string,
+  atual: number,
+  anterior: number
+): LinhaComparativa {
+  const diferenca = Math.round((atual - anterior) * 100) / 100;
+  return {
+    titulo,
+    atual,
+    anterior,
+    diferenca,
+    percentual: anterior > 0 ? (diferenca / anterior) * 100 : null,
+  };
+}
+
+// Normaliza apenas a chave de comparação; os lançamentos originais permanecem intactos.
+function chaveCategoriaComparativa(nome: string): string {
+  const chave = nome
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .replace(/\s+/g, ' ');
+
+  // Equivalência explícita para erro de digitação observado nos dados de teste.
+  // Não aplicar correção aproximada indiscriminada: categorias distintas podem ser parecidas.
+  const equivalencias: Record<string, string> = {
+    mateiais: 'materiais',
+  };
+  return equivalencias[chave] ?? chave;
+}
+
+function nomeCategoriaComparativa(nome: string): string {
+  const limpo = nome.trim().replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR');
+  return limpo.replace(
+    /(^|\s)(\p{L})/gu,
+    (_, espaco: string, letra: string) =>
+      espaco + letra.toLocaleUpperCase('pt-BR')
+  );
+}
+
+function categoriasComparativas(registros: RegistroFinanceiroUniversal[]) {
+  const categorias = new Map<string, { nome: string; total: number }>();
+  for (const registro of registros) {
+    if (registro.tipo !== 'DESPESA') continue;
+    const chave = chaveCategoriaComparativa(registro.categoria);
+    if (!chave) continue;
+    const anterior = categorias.get(chave);
+    categorias.set(chave, {
+      nome: nomeCategoriaComparativa(chave),
+      total: (anterior?.total ?? 0) + registro.valorCentavos / 100,
+    });
+  }
+  return categorias;
+}
+
 function App() {
   const [periodo, setPeriodo] = useState('Este mês');
   const [lancamentosFinanceiros, setLancamentosFinanceiros] = useState<
@@ -775,11 +852,6 @@ function App() {
     hoje.getMonth(),
     hoje.getDate() - 89
   );
-  const inicio180Dias = new Date(
-    hoje.getFullYear(),
-    hoje.getMonth(),
-    hoje.getDate() - 179
-  );
   const dataISO = (data: Date) =>
     `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(
       2,
@@ -796,28 +868,82 @@ function App() {
     periodo === 'Mês anterior'
       ? dataISO(new Date(hoje.getFullYear(), hoje.getMonth(), 0))
       : limiteFinal;
-  const inicioComparacao =
-    periodo === 'Mês anterior'
-      ? dataISO(new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1))
-      : periodo === 'Últimos 90 dias'
-      ? dataISO(inicio180Dias)
-      : dataISO(inicioMesAnterior);
-  const fimComparacao =
-    periodo === 'Mês anterior'
-      ? dataISO(new Date(hoje.getFullYear(), hoje.getMonth() - 1, 0))
-      : periodo === 'Últimos 90 dias'
-      ? dataISO(
-          new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 90)
-        )
-      : dataISO(new Date(hoje.getFullYear(), hoje.getMonth(), 0));
   const registrosDoPeriodo = dadosUniversaisEmpresa.registrosFinanceiros.filter(
     (registro) => registro.data >= inicioAtual && registro.data <= fimAtual
+  );
+  // Janela imediatamente anterior, com o mesmo número de dias do período escolhido.
+  // Evita comparar um mês em andamento com um mês anterior inteiro.
+  const diasNoPeriodo =
+    Math.round(
+      (Date.parse(`${fimAtual}T00:00:00Z`) -
+        Date.parse(`${inicioAtual}T00:00:00Z`)) /
+        86400000
+    ) + 1;
+  const inicioComparacaoEquivalente = dataISO(
+    new Date(Date.parse(`${inicioAtual}T12:00:00Z`) - diasNoPeriodo * 86400000)
+  );
+  const fimComparacaoEquivalente = dataISO(
+    new Date(Date.parse(`${inicioAtual}T12:00:00Z`) - 86400000)
   );
   const registrosComparacao =
     dadosUniversaisEmpresa.registrosFinanceiros.filter(
       (registro) =>
-        registro.data >= inicioComparacao && registro.data <= fimComparacao
+        registro.data >= inicioComparacaoEquivalente &&
+        registro.data <= fimComparacaoEquivalente
     );
+  const comparacaoDisponivel =
+    registrosDoPeriodo.length > 0 && registrosComparacao.length > 0;
+  const receitaComparacao = somarTipoComparativo(
+    registrosComparacao,
+    'RECEITA'
+  );
+  const despesaComparacao = somarTipoComparativo(
+    registrosComparacao,
+    'DESPESA'
+  );
+  const receitaAtual = somarTipoComparativo(registrosDoPeriodo, 'RECEITA');
+  const despesaAtual = somarTipoComparativo(registrosDoPeriodo, 'DESPESA');
+  const linhasComparativas = [
+    criarLinhaComparativa('Receitas', receitaAtual, receitaComparacao),
+    criarLinhaComparativa('Despesas', despesaAtual, despesaComparacao),
+    criarLinhaComparativa(
+      'Receitas menos despesas',
+      receitaAtual - despesaAtual,
+      receitaComparacao - despesaComparacao
+    ),
+  ];
+  const categoriasAtuais = categoriasComparativas(registrosDoPeriodo);
+  const categoriasAnteriores = categoriasComparativas(registrosComparacao);
+  const chavesCategorias = new Set([
+    ...categoriasAtuais.keys(),
+    ...categoriasAnteriores.keys(),
+  ]);
+  const variacoesCategoria = [...chavesCategorias]
+    .map((chave) => {
+      const atual = categoriasAtuais.get(chave);
+      const anterior = categoriasAnteriores.get(chave);
+      return criarLinhaComparativa(
+        atual?.nome ?? anterior?.nome ?? chave,
+        atual?.total ?? 0,
+        anterior?.total ?? 0
+      );
+    })
+    .sort(
+      (a, b) =>
+        Math.abs(b.diferenca) - Math.abs(a.diferenca) ||
+        a.titulo.localeCompare(b.titulo, 'pt-BR')
+    );
+  const variacoesRelevantes = variacoesCategoria
+    .filter((linha) => linha.diferenca !== 0)
+    .slice(0, 5);
+  const formatarDataComparativa = (valor: string) =>
+    valor.split('-').reverse().join('/');
+  const percentualComparativo = (linha: LinhaComparativa) =>
+    linha.percentual === null
+      ? 'Sem base percentual'
+      : `${linha.percentual > 0 ? '+' : ''}${linha.percentual
+          .toFixed(1)
+          .replace('.', ',')}%`;
   const diagnostico = calcularDiagnostico(
     registrosDoPeriodo,
     registrosComparacao,
@@ -1069,6 +1195,7 @@ function App() {
   const secoes = [
     'Visão geral',
     'Diagnóstico',
+    'Comparativos',
     'Oportunidades',
     'Decisões',
     'Resultados',
@@ -1446,6 +1573,162 @@ function App() {
               </span>
             </section>
           </>
+        )}
+        {secao === 'Comparativos' && (
+          <section className="painel">
+            <div className="painel-cabecalho">
+              <div>
+                <p className="sobretitulo">
+                  INTELIGÊNCIA COMPARATIVA • {periodo.toUpperCase()}
+                </p>
+                <h2>O que mudou nas finanças?</h2>
+              </div>
+              <span className="contador">
+                {diasNoPeriodo} dia(s) por período
+              </span>
+            </div>
+            <p className="subtitulo">
+              Período selecionado: {formatarDataComparativa(inicioAtual)} a{' '}
+              {formatarDataComparativa(fimAtual)}
+              {' • '}Comparação:{' '}
+              {formatarDataComparativa(inicioComparacaoEquivalente)} a{' '}
+              {formatarDataComparativa(fimComparacaoEquivalente)}.
+            </p>
+            <p className="subtitulo">
+              {registrosDoPeriodo.length} lançamento(s) no período atual e{' '}
+              {registrosComparacao.length} no anterior. A comparação utiliza
+              janelas consecutivas de mesma duração, mas não comprova que os
+              registros estejam completos nem que diferenças sejam causadas por
+              uma decisão.
+            </p>
+            {!comparacaoDisponivel ? (
+              <div
+                style={{
+                  padding: '18px',
+                  background: '#fff7ed',
+                  borderRadius: '12px',
+                  marginTop: '18px',
+                }}
+              >
+                <strong>Comparação indisponível</strong>
+                <p>
+                  É necessário ter lançamentos nos dois períodos. Importe ou
+                  registre dados financeiros antes de interpretar mudanças.
+                  Nenhuma variação será presumida.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSecao('Dados financeiros')}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '9px',
+                    border: '1px solid #214b58',
+                    background: '#fff',
+                    color: '#214b58',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Ir para dados financeiros
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="indicadores" style={{ marginTop: '20px' }}>
+                  {linhasComparativas.map((linha) => (
+                    <article className="indicador" key={linha.titulo}>
+                      <span>{linha.titulo}</span>
+                      <strong>{formatarValorFinanceiro(linha.atual)}</strong>
+                      <small>
+                        Antes: {formatarValorFinanceiro(linha.anterior)}
+                      </small>
+                      <small>
+                        Diferença: {linha.diferenca > 0 ? '+' : ''}
+                        {formatarValorFinanceiro(linha.diferenca)}
+                        {' • '}
+                        {percentualComparativo(linha)}
+                      </small>
+                    </article>
+                  ))}
+                </div>
+                <div style={{ marginTop: '24px' }}>
+                  <p className="sobretitulo">CATEGORIAS DE DESPESA</p>
+                  <h2>Maiores mudanças por categoria</h2>
+                  {variacoesRelevantes.length === 0 ? (
+                    <p className="subtitulo">
+                      Nenhuma diferença nas despesas por categoria entre os
+                      registros disponíveis.
+                    </p>
+                  ) : (
+                    variacoesRelevantes.map((linha, indice) => (
+                      <article className="oportunidade" key={linha.titulo}>
+                        <span>{String(indice + 1).padStart(2, '0')}</span>
+                        <div>
+                          <strong>{linha.titulo}</strong>
+                          <p>
+                            Atual: {formatarValorFinanceiro(linha.atual)} •
+                            Anterior: {formatarValorFinanceiro(linha.anterior)}
+                          </p>
+                          <p>
+                            {linha.diferenca > 0 ? 'Aumento' : 'Redução'} de{' '}
+                            {formatarValorFinanceiro(Math.abs(linha.diferenca))}
+                            . {percentualComparativo(linha)}.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              registrarDecisaoVinculada(
+                                `Investigar ${
+                                  linha.diferenca > 0 ? 'aumento' : 'redução'
+                                } das despesas em ${linha.titulo}`,
+                                'Inteligência Comparativa'
+                              );
+                              setSecao('Decisões');
+                            }}
+                            style={{
+                              marginTop: '10px',
+                              padding: '9px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid #214b58',
+                              background: '#fff',
+                              color: '#214b58',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Transformar em decisão
+                          </button>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+                <div className="recomendacao" style={{ marginTop: '22px' }}>
+                  <div>
+                    <p className="sobretitulo">LEITURA EXECUTIVA</p>
+                    <h2>O que merece atenção?</h2>
+                    <p>
+                      {linhasComparativas[0].diferenca < 0
+                        ? 'As receitas registradas diminuíram. Verifique fontes de receita e cobertura dos lançamentos.'
+                        : linhasComparativas[0].diferenca > 0
+                        ? 'As receitas registradas aumentaram. Verifique se a mudança é recorrente.'
+                        : 'As receitas registradas não variaram entre os períodos.'}
+                    </p>
+                    <p>
+                      {linhasComparativas[1].diferenca > 0
+                        ? 'As despesas registradas aumentaram. Investigue as categorias com maior diferença.'
+                        : linhasComparativas[1].diferenca < 0
+                        ? 'As despesas registradas diminuíram. Confira se os custos foram registrados integralmente.'
+                        : 'As despesas registradas não variaram entre os períodos.'}
+                    </p>
+                    <p>
+                      Esses números representam movimentos cadastrados, não
+                      lucro líquido, projeção de caixa nem garantia de resultado
+                      futuro.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </section>
         )}
         {secao === 'Diagnóstico' && (
           <section className="painel">

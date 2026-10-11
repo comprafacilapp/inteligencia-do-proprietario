@@ -109,6 +109,21 @@ function validarRegistroFinanceiroUniversal(
   );
 }
 
+type AcompanhamentoDecisao = {
+  origem: string;
+  registradaEm: string;
+  periodoBase: string;
+  inicioBase: string;
+  fimBase: string;
+  receitasBase: number;
+  despesasBase: number;
+  resultadoBase: number;
+  avaliadaEm?: string;
+  receitasAvaliacao?: number;
+  despesasAvaliacao?: number;
+  resultadoAvaliacao?: number;
+};
+
 type Alerta = {
   titulo: string;
   descricao: string;
@@ -830,6 +845,65 @@ function App() {
       return [];
     }
   });
+  const [acompanhamentos, setAcompanhamentos] = useState<
+    Record<string, AcompanhamentoDecisao>
+  >(() => {
+    try {
+      const salvos = localStorage.getItem('prevanzia_acompanhamentos');
+      const dados: unknown = salvos ? JSON.parse(salvos) : {};
+      return dados && typeof dados === 'object' && !Array.isArray(dados)
+        ? (dados as Record<string, AcompanhamentoDecisao>)
+        : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(
+      'prevanzia_acompanhamentos',
+      JSON.stringify(acompanhamentos)
+    );
+  }, [acompanhamentos]);
+
+  const registrarDecisaoVinculada = (texto: string, origem: string) => {
+    const descricao = texto.trim();
+    if (!descricao) return;
+    const indice = decisoes.length;
+    setDecisoes((anteriores) => [...anteriores, descricao]);
+    setAcompanhamentos((anteriores) => ({
+      ...anteriores,
+      [String(indice)]: {
+        origem,
+        registradaEm: new Date().toISOString(),
+        periodoBase: periodo,
+        inicioBase: inicioAtual,
+        fimBase: fimAtual,
+        receitasBase: diagnostico.receitas,
+        despesasBase: diagnostico.despesas,
+        resultadoBase: diagnostico.resultado,
+      },
+    }));
+    setNovaDecisao('');
+  };
+
+  const registrarAvaliacao = (indice: number) => {
+    const chave = String(indice);
+    setAcompanhamentos((anteriores) => {
+      const acompanhamento = anteriores[chave];
+      if (!acompanhamento) return anteriores;
+      return {
+        ...anteriores,
+        [chave]: {
+          ...acompanhamento,
+          avaliadaEm: new Date().toISOString(),
+          receitasAvaliacao: diagnostico.receitas,
+          despesasAvaliacao: diagnostico.despesas,
+          resultadoAvaliacao: diagnostico.resultado,
+        },
+      };
+    });
+  };
+
   const [alertaSelecionado, setAlertaSelecionado] = useState<string | null>(
     null
   );
@@ -1140,6 +1214,27 @@ function App() {
                   <div>
                     <h3>{alerta.titulo}</h3>
                     <p>{alerta.descricao}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        registrarDecisaoVinculada(
+                          `Investigar: ${alerta.titulo}`,
+                          `Alerta: ${alerta.titulo}`
+                        );
+                        setSecao('Decisões');
+                      }}
+                      style={{
+                        marginTop: '10px',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #214b58',
+                        background: '#fff',
+                        color: '#214b58',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Criar decisão deste alerta
+                    </button>
                   </div>
                 </article>
               ))
@@ -1173,7 +1268,30 @@ function App() {
               oportunidades.map((item, indice) => (
                 <article className="oportunidade" key={item}>
                   <span>{String(indice + 1).padStart(2, '0')}</span>
-                  <p>{item}</p>
+                  <div>
+                    <p>{item}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        registrarDecisaoVinculada(
+                          item,
+                          'Oportunidade identificada'
+                        );
+                        setSecao('Decisões');
+                      }}
+                      style={{
+                        marginTop: '10px',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #214b58',
+                        background: '#fff',
+                        color: '#214b58',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Transformar em decisão
+                    </button>
+                  </div>
                 </article>
               ))
             )}
@@ -1205,8 +1323,7 @@ function App() {
 
                 if (!novaDecisao.trim()) return;
 
-                setDecisoes([...decisoes, novaDecisao.trim()]);
-                setNovaDecisao('');
+                registrarDecisaoVinculada(novaDecisao, 'Decisão manual');
               }}
             >
               <input
@@ -1248,7 +1365,19 @@ function App() {
                 {decisoes.map((decisao, indice) => (
                   <article className="oportunidade" key={indice}>
                     <span>{String(indice + 1).padStart(2, '0')}</span>
-                    <p>{decisao}</p>
+                    <div>
+                      <p>{decisao}</p>
+                      {acompanhamentos[String(indice)] && (
+                        <small style={{ color: '#64748b' }}>
+                          {acompanhamentos[String(indice)].origem} • Base:{' '}
+                          {acompanhamentos[String(indice)].periodoBase} •{' '}
+                          Resultado inicial:{' '}
+                          {formatarValorFinanceiro(
+                            acompanhamentos[String(indice)].resultadoBase
+                          )}
+                        </small>
+                      )}
+                    </div>
                   </article>
                 ))}
               </div>
@@ -1537,9 +1666,111 @@ function App() {
                         <strong>{decisao}</strong>
                         {/* CÓDIGO NOVO COMEÇA AQUI */}
                         <p>
-                          Resultado:{' '}
+                          Resultado informado:{' '}
                           {resultadosDecisoes[String(indice)] || 'PENDENTE'}
                         </p>
+                        {acompanhamentos[String(indice)] &&
+                          (() => {
+                            const acompanhamento =
+                              acompanhamentos[String(indice)];
+                            const mesmaJanela =
+                              acompanhamento.inicioBase === inicioAtual &&
+                              acompanhamento.fimBase === fimAtual;
+                            const variacao =
+                              acompanhamento.resultadoAvaliacao === undefined
+                                ? null
+                                : acompanhamento.resultadoAvaliacao -
+                                  acompanhamento.resultadoBase;
+                            return (
+                              <div
+                                style={{
+                                  margin: '12px 0',
+                                  padding: '14px',
+                                  borderRadius: '10px',
+                                  background: '#f1f5f9',
+                                  lineHeight: 1.6,
+                                }}
+                              >
+                                <strong>
+                                  Indicadores associados à decisão
+                                </strong>
+                                <p>Origem: {acompanhamento.origem}</p>
+                                <p>
+                                  Base ({acompanhamento.periodoBase}): receitas{' '}
+                                  {formatarValorFinanceiro(
+                                    acompanhamento.receitasBase
+                                  )}
+                                  , despesas{' '}
+                                  {formatarValorFinanceiro(
+                                    acompanhamento.despesasBase
+                                  )}
+                                  , resultado{' '}
+                                  {formatarValorFinanceiro(
+                                    acompanhamento.resultadoBase
+                                  )}
+                                  .
+                                </p>
+                                {acompanhamento.avaliadaEm &&
+                                  acompanhamento.resultadoAvaliacao !==
+                                    undefined && (
+                                    <p>
+                                      Última avaliação (
+                                      {new Date(
+                                        acompanhamento.avaliadaEm
+                                      ).toLocaleString('pt-BR')}
+                                      ): receitas{' '}
+                                      {formatarValorFinanceiro(
+                                        acompanhamento.receitasAvaliacao ?? 0
+                                      )}
+                                      , despesas{' '}
+                                      {formatarValorFinanceiro(
+                                        acompanhamento.despesasAvaliacao ?? 0
+                                      )}
+                                      , resultado{' '}
+                                      {formatarValorFinanceiro(
+                                        acompanhamento.resultadoAvaliacao
+                                      )}
+                                      . Diferença observada:{' '}
+                                      {formatarValorFinanceiro(variacao ?? 0)}.
+                                    </p>
+                                  )}
+                                <p
+                                  style={{ fontSize: '12px', color: '#64748b' }}
+                                >
+                                  Comparação descritiva, não comprova que a
+                                  decisão causou a mudança. Confira se os
+                                  períodos e lançamentos são comparáveis.
+                                </p>
+                                {!mesmaJanela && (
+                                  <p
+                                    style={{
+                                      fontSize: '12px',
+                                      color: '#92400e',
+                                    }}
+                                  >
+                                    Atenção: o filtro atual usa datas diferentes
+                                    das da base. Compare apenas períodos
+                                    equivalentes.
+                                  </p>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => registrarAvaliacao(indice)}
+                                  style={{
+                                    padding: '9px 12px',
+                                    borderRadius: '8px',
+                                    background: '#214b58',
+                                    color: '#fff',
+                                    border: 0,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  Registrar avaliação do período selecionado
+                                </button>
+                              </div>
+                            );
+                          })()}
+
                         <div
                           style={{
                             display: 'flex',

@@ -115,29 +115,180 @@ type Alerta = {
   nivel: 'alto' | 'medio';
 };
 
-const alertas: Alerta[] = [
-  {
-    titulo: 'Queda na margem de lucro',
-    descricao: 'A margem estimada caiu de 31% para 23% neste período.',
-    nivel: 'alto',
-  },
-  {
-    titulo: 'Despesas em crescimento',
-    descricao: 'As despesas aumentaram 18% em relação ao período anterior.',
-    nivel: 'medio',
-  },
-  {
-    titulo: 'Recebimentos atrasados',
-    descricao: 'Existem R$ 8.450 em recebimentos que precisam de atenção.',
-    nivel: 'medio',
-  },
-];
+type DiagnosticoCalculado = {
+  receitas: number;
+  despesas: number;
+  resultado: number;
+  percentualDespesas: number | null;
+  quantidade: number;
+  alertas: Alerta[];
+  oportunidades: string[];
+  resumo: string;
+  recomendacao: string;
+};
 
-const oportunidades = [
-  'Revisar serviços com margem abaixo do esperado.',
-  'Identificar clientes com potencial de recompra.',
-  'Negociar custos com fornecedores recorrentes.',
-];
+function calcularDiagnostico(
+  registros: RegistroFinanceiroUniversal[],
+  registrosAnteriores: RegistroFinanceiroUniversal[],
+  moeda: (valor: number) => string
+): DiagnosticoCalculado {
+  const somar = (
+    itens: RegistroFinanceiroUniversal[],
+    tipo: 'RECEITA' | 'DESPESA'
+  ) =>
+    itens
+      .filter((item) => item.tipo === tipo)
+      .reduce((total, item) => total + item.valorCentavos, 0) / 100;
+  const receitas = somar(registros, 'RECEITA');
+  const despesas = somar(registros, 'DESPESA');
+  const resultado = receitas - despesas;
+  const percentualDespesas = receitas > 0 ? (despesas / receitas) * 100 : null;
+  const receitasAnteriores = somar(registrosAnteriores, 'RECEITA');
+  const despesasAnteriores = somar(registrosAnteriores, 'DESPESA');
+  const alertas: Alerta[] = [];
+  const oportunidades: string[] = [];
+
+  if (registros.length === 0) {
+    return {
+      receitas,
+      despesas,
+      resultado,
+      percentualDespesas,
+      quantidade: 0,
+      alertas: [],
+      oportunidades: [],
+      resumo:
+        'Não há lançamentos no período selecionado. Importe um CSV ou registre receitas e despesas.',
+      recomendacao:
+        'Cadastre os movimentos financeiros do período para iniciar a análise.',
+    };
+  }
+
+  if (resultado < 0) {
+    alertas.push({
+      titulo: 'Despesas superiores às receitas',
+      nivel: 'alto',
+      descricao: `As despesas superam as receitas em ${moeda(
+        Math.abs(resultado)
+      )} neste período.`,
+    });
+    oportunidades.push(
+      'Identificar as despesas que podem ser reduzidas e verificar receitas ainda não registradas.'
+    );
+  } else if (resultado === 0 && receitas > 0) {
+    alertas.push({
+      titulo: 'Resultado financeiro zerado',
+      nivel: 'medio',
+      descricao:
+        'As despesas consumiram todas as receitas registradas neste período.',
+    });
+    oportunidades.push(
+      'Revisar despesas recorrentes e preços para criar uma reserva financeira.'
+    );
+  }
+
+  if (receitas === 0 && despesas > 0) {
+    alertas.push({
+      titulo: 'Sem receitas registradas',
+      nivel: 'alto',
+      descricao: `Há ${moeda(
+        despesas
+      )} em despesas, mas nenhuma receita cadastrada no período.`,
+    });
+    oportunidades.push(
+      'Verificar se faltam receitas no arquivo importado ou se houve um período sem faturamento.'
+    );
+  } else if (percentualDespesas !== null && percentualDespesas >= 80) {
+    alertas.push({
+      titulo: 'Despesas elevadas em relação às receitas',
+      nivel: percentualDespesas >= 100 ? 'alto' : 'medio',
+      descricao: `As despesas representam ${percentualDespesas
+        .toFixed(1)
+        .replace('.', ',')}% das receitas registradas.`,
+    });
+    oportunidades.push(
+      'Analisar as categorias de maior gasto e negociar custos quando possível.'
+    );
+  }
+
+  if (registrosAnteriores.length > 0) {
+    if (receitasAnteriores > 0 && receitas < receitasAnteriores) {
+      const queda =
+        ((receitasAnteriores - receitas) / receitasAnteriores) * 100;
+      alertas.push({
+        titulo: 'Receitas abaixo do período anterior',
+        nivel: queda >= 20 ? 'alto' : 'medio',
+        descricao: `As receitas registradas caíram ${queda
+          .toFixed(1)
+          .replace('.', ',')}% em relação ao período de comparação.`,
+      });
+      oportunidades.push(
+        'Verificar quais serviços ou fontes de receita tiveram menor movimento.'
+      );
+    }
+    if (despesasAnteriores > 0 && despesas > despesasAnteriores) {
+      const aumento =
+        ((despesas - despesasAnteriores) / despesasAnteriores) * 100;
+      alertas.push({
+        titulo: 'Despesas acima do período anterior',
+        nivel: aumento >= 20 ? 'alto' : 'medio',
+        descricao: `As despesas registradas aumentaram ${aumento
+          .toFixed(1)
+          .replace('.', ',')}% na comparação.`,
+      });
+      oportunidades.push(
+        'Comparar os gastos por categoria entre os períodos e investigar os aumentos.'
+      );
+    }
+  }
+
+  const gastosPorCategoria = new Map<string, number>();
+  for (const registro of registros) {
+    if (registro.tipo === 'DESPESA') {
+      gastosPorCategoria.set(
+        registro.categoria,
+        (gastosPorCategoria.get(registro.categoria) ?? 0) +
+          registro.valorCentavos / 100
+      );
+    }
+  }
+  const maiorGasto = [...gastosPorCategoria.entries()].sort(
+    (a, b) => b[1] - a[1]
+  )[0];
+  if (maiorGasto && despesas > 0) {
+    oportunidades.push(
+      `Examinar a categoria de despesa "${
+        maiorGasto[0]
+      }", responsável por ${moeda(maiorGasto[1])} dos gastos registrados.`
+    );
+  }
+  if (alertas.length === 0) {
+    oportunidades.unshift(
+      'Manter o acompanhamento das receitas e despesas e comparar os próximos períodos.'
+    );
+  }
+  return {
+    receitas,
+    despesas,
+    resultado,
+    percentualDespesas,
+    quantidade: registros.length,
+    alertas,
+    oportunidades: [...new Set(oportunidades)].slice(0, 5),
+    resumo:
+      resultado >= 0
+        ? `As receitas registradas cobrem as despesas do período, com diferença de ${moeda(
+            resultado
+          )}.`
+        : `As despesas registradas superam as receitas em ${moeda(
+            Math.abs(resultado)
+          )}.`,
+    recomendacao:
+      alertas.length > 0
+        ? 'Investigue os alertas e confira a integridade dos lançamentos antes de decidir.'
+        : 'Acompanhe a evolução dos números e valide se todos os movimentos foram registrados.',
+  };
+}
 
 function App() {
   const [periodo, setPeriodo] = useState('Este mês');
@@ -587,6 +738,74 @@ function App() {
       currency: 'BRL',
     });
 
+  // INTELIGÊNCIA FINANCEIRA — FILTRO DE PERÍODO E COMPARAÇÃO REAL
+  const hoje = new Date();
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const inicioMesAnterior = new Date(
+    hoje.getFullYear(),
+    hoje.getMonth() - 1,
+    1
+  );
+  const inicio90Dias = new Date(
+    hoje.getFullYear(),
+    hoje.getMonth(),
+    hoje.getDate() - 89
+  );
+  const inicio180Dias = new Date(
+    hoje.getFullYear(),
+    hoje.getMonth(),
+    hoje.getDate() - 179
+  );
+  const dataISO = (data: Date) =>
+    `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(
+      2,
+      '0'
+    )}-${String(data.getDate()).padStart(2, '0')}`;
+  const limiteFinal = dataISO(hoje);
+  const inicioAtual =
+    periodo === 'Mês anterior'
+      ? dataISO(inicioMesAnterior)
+      : periodo === 'Últimos 90 dias'
+      ? dataISO(inicio90Dias)
+      : dataISO(inicioMes);
+  const fimAtual =
+    periodo === 'Mês anterior'
+      ? dataISO(new Date(hoje.getFullYear(), hoje.getMonth(), 0))
+      : limiteFinal;
+  const inicioComparacao =
+    periodo === 'Mês anterior'
+      ? dataISO(new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1))
+      : periodo === 'Últimos 90 dias'
+      ? dataISO(inicio180Dias)
+      : dataISO(inicioMesAnterior);
+  const fimComparacao =
+    periodo === 'Mês anterior'
+      ? dataISO(new Date(hoje.getFullYear(), hoje.getMonth() - 1, 0))
+      : periodo === 'Últimos 90 dias'
+      ? dataISO(
+          new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 90)
+        )
+      : dataISO(new Date(hoje.getFullYear(), hoje.getMonth(), 0));
+  const registrosDoPeriodo = dadosUniversaisEmpresa.registrosFinanceiros.filter(
+    (registro) => registro.data >= inicioAtual && registro.data <= fimAtual
+  );
+  const registrosComparacao =
+    dadosUniversaisEmpresa.registrosFinanceiros.filter(
+      (registro) =>
+        registro.data >= inicioComparacao && registro.data <= fimComparacao
+    );
+  const diagnostico = calcularDiagnostico(
+    registrosDoPeriodo,
+    registrosComparacao,
+    formatarValorFinanceiro
+  );
+  const alertas = diagnostico.alertas;
+  const oportunidades = diagnostico.oportunidades;
+  const formatarPercentual = (numero: number | null) =>
+    numero === null
+      ? 'Sem receita no período'
+      : `${numero.toFixed(1).replace('.', ',')}%`;
+
   const [secao, setSecao] = useState('Visão geral');
   const [novaDecisao, setNovaDecisao] = useState('');
   const [descricaoLancamento, setDescricaoLancamento] = useState('');
@@ -727,10 +946,11 @@ function App() {
         </header>
 
         <div className="aviso-demo">
-          <strong>Modo demonstração</strong>
+          <strong>Análise dos lançamentos cadastrados</strong>
           <span>
-            Os valores abaixo são fictícios. Ainda não há dados reais
-            conectados.
+            Indicadores calculados com os dados registrados neste navegador. Não
+            incluem contas a receber, contas a pagar, impostos ou custos não
+            informados. Os lançamentos de teste continuam sendo fictícios.
           </span>
         </div>
 
@@ -738,43 +958,49 @@ function App() {
           <>
             <section className="saude">
               <div>
-                <p className="sobretitulo">SAÚDE DA EMPRESA</p>
-                <h2>Atenção necessária</h2>
-                <p>
-                  Encontramos sinais que merecem análise antes das próximas
-                  decisões.
+                <p className="sobretitulo">
+                  SAÚDE FINANCEIRA • {periodo.toUpperCase()}
                 </p>
+                <h2>
+                  {diagnostico.quantidade === 0
+                    ? 'Sem dados no período'
+                    : diagnostico.resultado < 0
+                    ? 'Atenção necessária'
+                    : alertas.length > 0
+                    ? 'Pontos para investigar'
+                    : 'Resultado não negativo'}
+                </h2>
+                <p>{diagnostico.resumo}</p>
               </div>
-              <span className="saude-indicador">● Atenção</span>
+              <span className="saude-indicador">
+                {alertas.length} alerta(s)
+              </span>
             </section>
 
             <section className="indicadores">
               <article className="indicador">
-                <span>Receita estimada</span>
-                <strong>R$ 84.500</strong>
-                <small className="positivo">
-                  ↑ 8,2% em relação ao período anterior
-                </small>
+                <span>Receitas registradas</span>
+                <strong>{formatarValorFinanceiro(diagnostico.receitas)}</strong>
+                <small>{diagnostico.quantidade} lançamento(s) no período</small>
               </article>
-
               <article className="indicador">
-                <span>Despesas estimadas</span>
-                <strong>R$ 65.065</strong>
-                <small className="negativo">
-                  ↑ 18% em relação ao período anterior
-                </small>
+                <span>Despesas registradas</span>
+                <strong>{formatarValorFinanceiro(diagnostico.despesas)}</strong>
+                <small>Somente despesas cadastradas</small>
               </article>
-
               <article className="indicador">
-                <span>Resultado estimado</span>
-                <strong>R$ 19.435</strong>
-                <small>Receita menos despesas informadas</small>
+                <span>Receitas menos despesas</span>
+                <strong>
+                  {formatarValorFinanceiro(diagnostico.resultado)}
+                </strong>
+                <small>Não representa necessariamente lucro</small>
               </article>
-
               <article className="indicador">
-                <span>Margem estimada</span>
-                <strong>23%</strong>
-                <small className="negativo">↓ 8 pontos percentuais</small>
+                <span>Despesas / receitas</span>
+                <strong>
+                  {formatarPercentual(diagnostico.percentualDespesas)}
+                </strong>
+                <small>Proporção dos valores informados</small>
               </article>
             </section>
 
@@ -782,58 +1008,62 @@ function App() {
               <section className="painel">
                 <div className="painel-cabecalho">
                   <div>
-                    <p className="sobretitulo">O QUE MUDOU?</p>
-                    <h2>Alertas importantes</h2>
+                    <p className="sobretitulo">ANÁLISE AUTOMÁTICA</p>
+                    <h2>Alertas financeiros</h2>
                   </div>
                   <span className="contador">{alertas.length} alertas</span>
                 </div>
-
-                {alertas.map((alerta) => (
-                  <article
-                    className="alerta"
-                    key={alerta.titulo}
-                    onClick={() =>
-                      setAlertaSelecionado(
-                        alertaSelecionado === alerta.titulo
-                          ? null
-                          : alerta.titulo
-                      )
-                    }
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <span className={`alerta-marcador ${alerta.nivel}`} />
-                    <div>
-                      <h3>{alerta.titulo}</h3>
-                      <p>{alerta.descricao}</p>
-
-                      {alertaSelecionado === alerta.titulo && (
-                        <div
-                          style={{
-                            marginTop: '12px',
-                            padding: '14px',
-                            background: '#f3f6fb',
-                            borderRadius: '10px',
-                            fontSize: '13px',
-                            lineHeight: '1.6',
-                          }}
-                        >
-                          <strong>Diagnóstico preliminar</strong>
-                          <p>
-                            Este alerta merece investigação. Compare os dados do
-                            período atual com os anteriores para identificar
-                            possíveis causas.
-                          </p>
-                          <p>
-                            <strong>Próxima ação:</strong> confira os registros
-                            financeiros relacionados antes de tomar uma decisão.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </article>
-                ))}
+                {alertas.length === 0 ? (
+                  <p className="subtitulo">
+                    {diagnostico.quantidade === 0
+                      ? 'Nenhum lançamento neste período para analisar.'
+                      : 'Nenhum alerta disparado pelas regras atuais. Continue acompanhando.'}
+                  </p>
+                ) : (
+                  alertas.map((alerta) => (
+                    <article
+                      className="alerta"
+                      key={alerta.titulo}
+                      onClick={() =>
+                        setAlertaSelecionado(
+                          alertaSelecionado === alerta.titulo
+                            ? null
+                            : alerta.titulo
+                        )
+                      }
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <span className={`alerta-marcador ${alerta.nivel}`} />
+                      <div>
+                        <h3>{alerta.titulo}</h3>
+                        <p>{alerta.descricao}</p>
+                        {alertaSelecionado === alerta.titulo && (
+                          <div
+                            style={{
+                              marginTop: '12px',
+                              padding: '14px',
+                              background: '#f3f6fb',
+                              borderRadius: '10px',
+                              fontSize: '13px',
+                              lineHeight: 1.6,
+                            }}
+                          >
+                            <strong>Como interpretar</strong>
+                            <p>
+                              Este alerta foi calculado a partir dos lançamentos
+                              registrados nos períodos selecionados.
+                            </p>
+                            <p>
+                              <strong>Próxima ação:</strong> confira os dados e
+                              as categorias envolvidos antes de decidir.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  ))
+                )}
               </section>
-
               <section className="painel">
                 <div className="painel-cabecalho">
                   <div>
@@ -841,27 +1071,32 @@ function App() {
                     <h2>Oportunidades identificadas</h2>
                   </div>
                 </div>
-
-                {oportunidades.map((item, indice) => (
-                  <article className="oportunidade" key={item}>
-                    <span>{String(indice + 1).padStart(2, '0')}</span>
-                    <p>{item}</p>
-                  </article>
-                ))}
+                {oportunidades.length === 0 ? (
+                  <p className="subtitulo">
+                    Cadastre lançamentos para receber sugestões.
+                  </p>
+                ) : (
+                  oportunidades.map((item, indice) => (
+                    <article className="oportunidade" key={item}>
+                      <span>{String(indice + 1).padStart(2, '0')}</span>
+                      <p>{item}</p>
+                    </article>
+                  ))
+                )}
               </section>
             </div>
-
             <section className="recomendacao">
               <div>
                 <p className="sobretitulo">PRÓXIMA DECISÃO</p>
-                <h2>Investigue a redução da margem</h2>
-                <p>
-                  Compare custos, descontos e preços praticados antes de decidir
-                  qualquer reajuste.
-                </p>
+                <h2>
+                  {alertas.length > 0
+                    ? 'Investigue os pontos de atenção'
+                    : 'Mantenha os registros atualizados'}
+                </h2>
+                <p>{diagnostico.recomendacao}</p>
               </div>
               <span className="recomendacao-etiqueta">
-                Recomendação demonstrativa
+                Análise automática dos registros
               </span>
             </section>
           </>
@@ -870,30 +1105,50 @@ function App() {
           <section className="painel">
             <div className="painel-cabecalho">
               <div>
-                <p className="sobretitulo">ANÁLISE EMPRESARIAL</p>
+                <p className="sobretitulo">
+                  ANÁLISE EMPRESARIAL • {periodo.toUpperCase()}
+                </p>
                 <h2>Diagnóstico financeiro</h2>
               </div>
-              <span className="contador">3 pontos de atenção</span>
+              <span className="contador">
+                {alertas.length} pontos de atenção
+              </span>
             </div>
-
-            {alertas.map((alerta) => (
-              <article className="alerta" key={alerta.titulo}>
-                <span className={`alerta-marcador ${alerta.nivel}`} />
-                <div>
-                  <h3>{alerta.titulo}</h3>
-                  <p>{alerta.descricao}</p>
-                </div>
-              </article>
-            ))}
-
+            <p className="subtitulo">{diagnostico.resumo}</p>
+            <p>
+              Receitas:{' '}
+              <strong>{formatarValorFinanceiro(diagnostico.receitas)}</strong> •
+              Despesas:{' '}
+              <strong>{formatarValorFinanceiro(diagnostico.despesas)}</strong>
+            </p>
+            <p>
+              Despesas sobre receitas:{' '}
+              <strong>
+                {formatarPercentual(diagnostico.percentualDespesas)}
+              </strong>
+            </p>
+            {alertas.length === 0 ? (
+              <p className="subtitulo">
+                {diagnostico.quantidade === 0
+                  ? 'Sem dados para diagnosticar.'
+                  : 'Nenhum alerta encontrado pelas regras atuais.'}
+              </p>
+            ) : (
+              alertas.map((alerta) => (
+                <article className="alerta" key={alerta.titulo}>
+                  <span className={`alerta-marcador ${alerta.nivel}`} />
+                  <div>
+                    <h3>{alerta.titulo}</h3>
+                    <p>{alerta.descricao}</p>
+                  </div>
+                </article>
+              ))
+            )}
             <div className="recomendacao">
               <div>
                 <p className="sobretitulo">ORIENTAÇÃO INICIAL</p>
-                <h2>Investigue antes de decidir</h2>
-                <p>
-                  Compare receitas, despesas e recebimentos dos períodos
-                  anteriores para investigar as possíveis causas.
-                </p>
+                <h2>Confira os números antes de decidir</h2>
+                <p>{diagnostico.recomendacao}</p>
               </div>
             </div>
           </section>
@@ -902,26 +1157,33 @@ function App() {
           <section className="painel">
             <div className="painel-cabecalho">
               <div>
-                <p className="sobretitulo">POTENCIAL DE MELHORIA</p>
+                <p className="sobretitulo">
+                  POTENCIAL DE MELHORIA • {periodo.toUpperCase()}
+                </p>
                 <h2>Oportunidades para a empresa</h2>
               </div>
-              <span className="contador">3 sugestões</span>
+              <span className="contador">{oportunidades.length} sugestões</span>
             </div>
-
-            {oportunidades.map((item, indice) => (
-              <article className="oportunidade" key={item}>
-                <span>{String(indice + 1).padStart(2, '0')}</span>
-                <p>{item}</p>
-              </article>
-            ))}
-
+            {oportunidades.length === 0 ? (
+              <p className="subtitulo">
+                Importe ou registre movimentos financeiros para receber
+                sugestões.
+              </p>
+            ) : (
+              oportunidades.map((item, indice) => (
+                <article className="oportunidade" key={item}>
+                  <span>{String(indice + 1).padStart(2, '0')}</span>
+                  <p>{item}</p>
+                </article>
+              ))
+            )}
             <div className="recomendacao">
               <div>
                 <p className="sobretitulo">PRÓXIMO PASSO</p>
-                <h2>Escolha uma oportunidade para investigar</h2>
+                <h2>Valide as oportunidades</h2>
                 <p>
-                  Avalie o potencial de ganho, os custos e os riscos antes de
-                  transformar uma sugestão em decisão.
+                  Estas sugestões são baseadas nos lançamentos disponíveis, não
+                  em previsões ou garantias de ganho.
                 </p>
               </div>
             </div>
@@ -1392,7 +1654,8 @@ function App() {
 
             <p className="subtitulo">
               Registre receitas e despesas para acompanhar a situação financeira
-              da empresa.
+              da empresa. Os totais abaixo consideram todos os lançamentos
+              cadastrados.
             </p>
 
             {/* MARCO 11 — RESUMO FINANCEIRO AUTOMÁTICO */}

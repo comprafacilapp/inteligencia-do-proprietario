@@ -327,20 +327,22 @@ function App() {
           return;
         }
 
-        const data = colunas[indice('data')];
+        const dataTexto = colunas[indice('data')].trim();
         const descricao = colunas[indice('descricao')].trim();
         const categoria = colunas[indice('categoria')].trim();
         const tipoTexto = colunas[indice('tipo')].trim().toUpperCase();
-
         const valorTexto = colunas[indice('valor')].trim();
 
-        // Aceita 1500.50 ou 1500,50.
-        // Não aceita separadores de milhar nesta versão.
-        const formatoValorValido = /^\d+(?:[.,]\d{1,2})?$/.test(valorTexto);
+        // FASE 4 — DATAS BRASILEIRAS E INTERNACIONAIS
 
-        const valor = formatoValorValido
-          ? Number(valorTexto.replace(',', '.'))
-          : NaN;
+        let data = dataTexto;
+
+        const dataBrasileira = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dataTexto);
+
+        if (dataBrasileira) {
+          const [, dia, mes, ano] = dataBrasileira;
+          data = `${ano}-${mes}-${dia}`;
+        }
 
         const dataFormatoValido = /^\d{4}-\d{2}-\d{2}$/.test(data);
 
@@ -351,6 +353,27 @@ function App() {
         const dataValida =
           !Number.isNaN(dataObjeto.getTime()) &&
           dataObjeto.toISOString().slice(0, 10) === data;
+
+        // FASE 4 — VALORES BRASILEIROS E INTERNACIONAIS
+
+        let valorNormalizado = valorTexto;
+        let formatoValorValido = false;
+
+        if (/^\d{1,3}(?:\.\d{3})+,\d{1,2}$/.test(valorTexto)) {
+          // Exemplo: 1.500,50
+          valorNormalizado = valorTexto.replace(/\./g, '').replace(',', '.');
+          formatoValorValido = true;
+        } else if (/^\d{1,3}(?:,\d{3})+\.\d{1,2}$/.test(valorTexto)) {
+          // Exemplo: 1,500.50
+          valorNormalizado = valorTexto.replace(/,/g, '');
+          formatoValorValido = true;
+        } else if (/^\d+(?:[.,]\d{1,2})?$/.test(valorTexto)) {
+          // Exemplos: 1500,50 / 1500.50 / 1500
+          valorNormalizado = valorTexto.replace(',', '.');
+          formatoValorValido = true;
+        }
+
+        const valor = formatoValorValido ? Number(valorNormalizado) : NaN;
 
         const tipoValido = tipoTexto === 'RECEITA' || tipoTexto === 'DESPESA';
 
@@ -1474,7 +1497,7 @@ function App() {
                 }}
               >
                 Versão de testes: utilize apenas arquivos fictícios. A proteção
-                contra importações duplicadas ainda será implementada.
+                contra importações duplicadas está ativa.
               </p>
             </div>
 

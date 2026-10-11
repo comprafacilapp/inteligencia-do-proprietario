@@ -118,7 +118,11 @@ type AcompanhamentoDecisao = {
   receitasBase: number;
   despesasBase: number;
   resultadoBase: number;
+  quantidadeBase?: number;
   avaliadaEm?: string;
+  inicioAvaliacao?: string;
+  fimAvaliacao?: string;
+  quantidadeAvaliacao?: number;
   receitasAvaliacao?: number;
   despesasAvaliacao?: number;
   resultadoAvaliacao?: number;
@@ -277,6 +281,11 @@ function calcularDiagnostico(
       }", responsável por ${moeda(maiorGasto[1])} dos gastos registrados.`
     );
   }
+  // Alertas graves aparecem antes dos avisos moderados.
+  alertas.sort(
+    (a, b) => (a.nivel === 'alto' ? 0 : 1) - (b.nivel === 'alto' ? 0 : 1)
+  );
+
   if (alertas.length === 0) {
     oportunidades.unshift(
       'Manter o acompanhamento das receitas e despesas e comparar os próximos períodos.'
@@ -868,6 +877,29 @@ function App() {
   const registrarDecisaoVinculada = (texto: string, origem: string) => {
     const descricao = texto.trim();
     if (!descricao) return;
+
+    // Impede a mesma decisão no mesmo período, preservando decisões de outros períodos.
+    const normalizar = (valor: string) =>
+      valor
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+    const jaRegistrada = decisoes.some((decisao, indice) => {
+      const anterior = acompanhamentos[String(indice)];
+      return (
+        normalizar(decisao) === normalizar(descricao) &&
+        (!anterior ||
+          (anterior.inicioBase === inicioAtual &&
+            anterior.fimBase === fimAtual))
+      );
+    });
+    if (jaRegistrada) {
+      alert('Esta decisão já foi registrada para o período selecionado.');
+      return;
+    }
+
     const indice = decisoes.length;
     setDecisoes((anteriores) => [...anteriores, descricao]);
     setAcompanhamentos((anteriores) => ({
@@ -881,6 +913,7 @@ function App() {
         receitasBase: diagnostico.receitas,
         despesasBase: diagnostico.despesas,
         resultadoBase: diagnostico.resultado,
+        quantidadeBase: diagnostico.quantidade,
       },
     }));
     setNovaDecisao('');
@@ -896,6 +929,9 @@ function App() {
         [chave]: {
           ...acompanhamento,
           avaliadaEm: new Date().toISOString(),
+          inicioAvaliacao: inicioAtual,
+          fimAvaliacao: fimAtual,
+          quantidadeAvaliacao: diagnostico.quantidade,
           receitasAvaliacao: diagnostico.receitas,
           despesasAvaliacao: diagnostico.despesas,
           resultadoAvaliacao: diagnostico.resultado,
@@ -1122,14 +1158,24 @@ function App() {
                               lineHeight: 1.6,
                             }}
                           >
-                            <strong>Como interpretar</strong>
+                            <strong>
+                              Prioridade{' '}
+                              {alerta.nivel === 'alto' ? 'alta' : 'moderada'}
+                            </strong>
                             <p>
                               Este alerta foi calculado a partir dos lançamentos
                               registrados nos períodos selecionados.
                             </p>
                             <p>
-                              <strong>Próxima ação:</strong> confira os dados e
-                              as categorias envolvidos antes de decidir.
+                              <strong>Motivo:</strong> {alerta.descricao}{' '}
+                              <strong>Próxima ação:</strong>{' '}
+                              {alerta.titulo.includes('Despesas') ||
+                              alerta.titulo.includes('despesas')
+                                ? 'revise as categorias de gastos e confirme se as receitas estão completas.'
+                                : alerta.titulo.includes('Receitas') ||
+                                  alerta.titulo.includes('receitas')
+                                ? 'confira os lançamentos e identifique as fontes de receita que mudaram.'
+                                : 'confira os dados e o período analisado antes de decidir.'}
                             </p>
                           </div>
                         )}
@@ -1212,7 +1258,10 @@ function App() {
                 <article className="alerta" key={alerta.titulo}>
                   <span className={`alerta-marcador ${alerta.nivel}`} />
                   <div>
-                    <h3>{alerta.titulo}</h3>
+                    <h3>
+                      {alerta.titulo} — prioridade{' '}
+                      {alerta.nivel === 'alto' ? 'alta' : 'moderada'}
+                    </h3>
                     <p>{alerta.descricao}</p>
                     <button
                       type="button"
@@ -1673,9 +1722,47 @@ function App() {
                           (() => {
                             const acompanhamento =
                               acompanhamentos[String(indice)];
-                            const mesmaJanela =
-                              acompanhamento.inicioBase === inicioAtual &&
-                              acompanhamento.fimBase === fimAtual;
+                            const duracaoDias = (
+                              inicio: string,
+                              fim: string
+                            ) => {
+                              const primeiro = Date.parse(
+                                `${inicio}T12:00:00Z`
+                              );
+                              const ultimo = Date.parse(`${fim}T12:00:00Z`);
+                              return Number.isFinite(primeiro) &&
+                                Number.isFinite(ultimo)
+                                ? Math.round((ultimo - primeiro) / 86400000) + 1
+                                : 0;
+                            };
+                            const temAvaliacao =
+                              acompanhamento.resultadoAvaliacao !== undefined;
+                            const dadosSuficientes =
+                              (acompanhamento.quantidadeBase ?? 0) > 0 &&
+                              (acompanhamento.quantidadeAvaliacao ?? 0) > 0;
+                            const janelasDiferentes =
+                              acompanhamento.inicioBase !==
+                                acompanhamento.inicioAvaliacao ||
+                              acompanhamento.fimBase !==
+                                acompanhamento.fimAvaliacao;
+                            const duracoesIguais =
+                              duracaoDias(
+                                acompanhamento.inicioBase,
+                                acompanhamento.fimBase
+                              ) > 0 &&
+                              duracaoDias(
+                                acompanhamento.inicioBase,
+                                acompanhamento.fimBase
+                              ) ===
+                                duracaoDias(
+                                  acompanhamento.inicioAvaliacao ?? '',
+                                  acompanhamento.fimAvaliacao ?? ''
+                                );
+                            const comparacaoPossivel =
+                              temAvaliacao &&
+                              dadosSuficientes &&
+                              janelasDiferentes &&
+                              duracoesIguais;
                             const variacao =
                               acompanhamento.resultadoAvaliacao === undefined
                                 ? null
@@ -1730,8 +1817,12 @@ function App() {
                                       {formatarValorFinanceiro(
                                         acompanhamento.resultadoAvaliacao
                                       )}
-                                      . Diferença observada:{' '}
-                                      {formatarValorFinanceiro(variacao ?? 0)}.
+                                      .{' '}
+                                      {comparacaoPossivel
+                                        ? `Diferença observada: ${formatarValorFinanceiro(
+                                            variacao ?? 0
+                                          )}.`
+                                        : 'Diferença não apresentada como comparação válida.'}
                                     </p>
                                   )}
                                 <p
@@ -1741,18 +1832,34 @@ function App() {
                                   decisão causou a mudança. Confira se os
                                   períodos e lançamentos são comparáveis.
                                 </p>
-                                {!mesmaJanela && (
+                                {temAvaliacao && (
                                   <p
                                     style={{
                                       fontSize: '12px',
-                                      color: '#92400e',
+                                      color: comparacaoPossivel
+                                        ? '#166534'
+                                        : '#92400e',
+                                      fontWeight: 600,
                                     }}
                                   >
-                                    Atenção: o filtro atual usa datas diferentes
-                                    das da base. Compare apenas períodos
-                                    equivalentes.
+                                    {comparacaoPossivel
+                                      ? 'Comparação descritiva entre períodos de mesma duração e com lançamentos registrados. Não demonstra causalidade.'
+                                      : !dadosSuficientes
+                                      ? 'Comparação limitada: faltam lançamentos em uma das avaliações, ou a avaliação antiga não registrou a quantidade.'
+                                      : !janelasDiferentes
+                                      ? 'Mesma janela de datas: os valores podem refletir apenas novos lançamentos, não uma evolução entre períodos.'
+                                      : 'Períodos com durações diferentes: não é adequado comparar diretamente os totais.'}
                                   </p>
                                 )}
+                                <p
+                                  style={{ fontSize: '12px', color: '#64748b' }}
+                                >
+                                  Base: {acompanhamento.inicioBase} a{' '}
+                                  {acompanhamento.fimBase}.
+                                  {acompanhamento.inicioAvaliacao &&
+                                    acompanhamento.fimAvaliacao &&
+                                    ` Avaliação: ${acompanhamento.inicioAvaliacao} a ${acompanhamento.fimAvaliacao}.`}
+                                </p>
                                 <button
                                   type="button"
                                   onClick={() => registrarAvaliacao(indice)}

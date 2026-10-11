@@ -825,6 +825,67 @@ function App() {
   );
   const alertas = diagnostico.alertas;
   const oportunidades = diagnostico.oportunidades;
+  // RADAR EXECUTIVO — prioridades fundamentadas nos registros do período.
+  // Valores associados são exposição observada, não perdas nem ganhos previstos.
+  const radarPrioridades = alertas
+    .map((alerta) => {
+      const titulo = alerta.titulo;
+      const exposicao =
+        titulo === 'Despesas superiores às receitas'
+          ? Math.abs(diagnostico.resultado)
+          : titulo === 'Despesas elevadas em relação às receitas' ||
+            titulo === 'Despesas acima do período anterior'
+          ? diagnostico.despesas
+          : titulo === 'Sem receitas registradas'
+          ? diagnostico.despesas
+          : titulo === 'Receitas abaixo do período anterior'
+          ? diagnostico.receitas
+          : titulo === 'Resultado financeiro zerado'
+          ? diagnostico.despesas
+          : null;
+      const prioridade = alerta.nivel === 'alto' ? 2 : 1;
+      return { ...alerta, exposicao, prioridade };
+    })
+    .sort(
+      (a, b) =>
+        b.prioridade - a.prioridade ||
+        (b.exposicao ?? 0) - (a.exposicao ?? 0) ||
+        a.titulo.localeCompare(b.titulo, 'pt-BR')
+    );
+
+  // Ações concretas, sem estimar ganhos ou prometer resultados.
+  const radarAcoes =
+    diagnostico.quantidade === 0
+      ? []
+      : [
+          ...new Set([
+            ...radarPrioridades.map((alerta) =>
+              alerta.titulo === 'Despesas superiores às receitas'
+                ? 'Revisar as despesas que excedem as receitas e confirmar a integridade dos registros.'
+                : alerta.titulo === 'Sem receitas registradas'
+                ? 'Verificar se houve receitas não importadas ou ausência de faturamento.'
+                : alerta.titulo === 'Receitas abaixo do período anterior'
+                ? 'Identificar quais serviços ou clientes explicam a queda das receitas.'
+                : alerta.titulo === 'Despesas acima do período anterior'
+                ? 'Comparar os gastos por categoria com o período anterior.'
+                : alerta.titulo === 'Despesas elevadas em relação às receitas'
+                ? 'Priorizar a revisão das maiores categorias de despesa.'
+                : 'Conferir os lançamentos e revisar o equilíbrio entre receitas e despesas.'
+            ),
+            ...oportunidades,
+            'Conferir se os lançamentos do período estão completos antes de decidir.',
+            'Acompanhar os indicadores no próximo período para verificar a evolução.',
+          ]),
+        ].slice(0, 5);
+
+  const normalizarTextoRadar = (valor: string) =>
+    valor
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+
   const formatarPercentual = (numero: number | null) =>
     numero === null
       ? 'Sem receita no período'
@@ -918,6 +979,17 @@ function App() {
     }));
     setNovaDecisao('');
   };
+
+  // Relaciona uma recomendação à decisão já registrada no período.
+  const localizarDecisaoRadar = (texto: string) =>
+    decisoes.findIndex((decisao, indice) => {
+      const acompanhamento = acompanhamentos[String(indice)];
+      return (
+        normalizarTextoRadar(decisao) === normalizarTextoRadar(texto) &&
+        acompanhamento?.inicioBase === inicioAtual &&
+        acompanhamento?.fimBase === fimAtual
+      );
+    });
 
   const registrarAvaliacao = (indice: number) => {
     const chave = String(indice);
@@ -1085,6 +1157,160 @@ function App() {
               <span className="saude-indicador">
                 {alertas.length} alerta(s)
               </span>
+            </section>
+
+            <section className="painel" style={{ marginBottom: '24px' }}>
+              <div className="painel-cabecalho">
+                <div>
+                  <p className="sobretitulo">
+                    RADAR EXECUTIVO • {periodo.toUpperCase()}
+                  </p>
+                  <h2>Prioridades e plano de ação</h2>
+                </div>
+                <span className="contador">
+                  {radarPrioridades.length} prioridade(s)
+                </span>
+              </div>
+              {diagnostico.quantidade === 0 ? (
+                <p className="subtitulo">
+                  Sem lançamentos neste período. Importe dados para ativar o
+                  radar.
+                </p>
+              ) : (
+                <>
+                  <p className="subtitulo">
+                    Análise de {diagnostico.quantidade} lançamento(s) entre{' '}
+                    {inicioAtual.split('-').reverse().join('/')} e{' '}
+                    {fimAtual.split('-').reverse().join('/')}. Os valores
+                    representam movimentos registrados, não perdas previstas.
+                  </p>
+                  {radarPrioridades.length === 0 ? (
+                    <p className="subtitulo">
+                      Nenhum alerta disparado pelas regras atuais. Mantenha o
+                      acompanhamento.
+                    </p>
+                  ) : (
+                    <div
+                      style={{ display: 'grid', gap: '12px', margin: '16px 0' }}
+                    >
+                      {radarPrioridades.map((item, indice) => {
+                        const textoDecisao = `Investigar: ${item.titulo}`;
+                        const indiceDecisao =
+                          localizarDecisaoRadar(textoDecisao);
+                        const resultadoDecisao =
+                          indiceDecisao >= 0
+                            ? resultadosDecisoes[String(indiceDecisao)] ??
+                              'PENDENTE'
+                            : null;
+                        return (
+                          <article
+                            key={item.titulo}
+                            style={{
+                              padding: '16px',
+                              border: '1px solid #dce4ef',
+                              borderRadius: '12px',
+                              background: '#f8fafc',
+                            }}
+                          >
+                            <strong>
+                              {indice + 1}. {item.titulo} —{' '}
+                              {item.nivel === 'alto'
+                                ? 'Prioridade alta'
+                                : 'Prioridade moderada'}
+                            </strong>
+                            <p style={{ margin: '8px 0' }}>{item.descricao}</p>
+                            {item.exposicao !== null && (
+                              <p style={{ margin: '8px 0', fontSize: '13px' }}>
+                                Valor relacionado nos registros:{' '}
+                                <strong>
+                                  {formatarValorFinanceiro(item.exposicao)}
+                                </strong>
+                              </p>
+                            )}
+                            <p style={{ margin: '8px 0', fontSize: '13px' }}>
+                              Situação:{' '}
+                              {resultadoDecisao === null
+                                ? 'Sem decisão vinculada'
+                                : resultadoDecisao === 'PENDENTE'
+                                ? 'Decisão registrada — avaliação pendente'
+                                : `Decisão avaliada como ${resultadoDecisao.toLowerCase()}`}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (indiceDecisao < 0) {
+                                  registrarDecisaoVinculada(
+                                    textoDecisao,
+                                    `Radar: ${item.titulo}`
+                                  );
+                                }
+                                setSecao('Decisões');
+                              }}
+                              style={{
+                                padding: '9px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid #214b58',
+                                background: '#fff',
+                                color: '#214b58',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {indiceDecisao >= 0
+                                ? 'Ver decisão registrada'
+                                : 'Transformar em decisão'}
+                            </button>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <h3>Plano de ação sugerido</h3>
+                  <p className="subtitulo">
+                    Recomendações baseadas nos dados disponíveis; não são
+                    garantias de resultado.
+                  </p>
+                  <div
+                    style={{ display: 'grid', gap: '12px', marginTop: '12px' }}
+                  >
+                    {radarAcoes.map((acao, indice) => {
+                      const indiceDecisao = localizarDecisaoRadar(acao);
+                      return (
+                        <article className="oportunidade" key={acao}>
+                          <span>{String(indice + 1).padStart(2, '0')}</span>
+                          <div>
+                            <p>{acao}</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (indiceDecisao < 0) {
+                                  registrarDecisaoVinculada(
+                                    acao,
+                                    'Plano de ação do Radar'
+                                  );
+                                }
+                                setSecao('Decisões');
+                              }}
+                              style={{
+                                marginTop: '10px',
+                                padding: '9px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid #214b58',
+                                background: '#fff',
+                                color: '#214b58',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {indiceDecisao >= 0
+                                ? 'Ver decisão registrada'
+                                : 'Registrar esta ação'}
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </section>
 
             <section className="indicadores">

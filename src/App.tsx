@@ -567,64 +567,128 @@ function App() {
       cancelarLeitura();
     };
   }, [usuarioAtual]);
-  // FASE 4 — HISTÓRICO PERSISTENTE DE IMPORTAÇÕES CSV
+  // FASE 4 — HISTÓRICO CSV: SINCRONIZAÇÃO ISOLADA POR USUÁRIO
   const [historicoImportacoes, setHistoricoImportacoes] = useState<
     HistoricoImportacao[]
-  >(() => {
-    try {
-      const salvos = localStorage.getItem(
-        auth.currentUser
-          ? `prevanzia_historico_importacoes_${auth.currentUser.uid}`
-          : 'prevanzia_historico_importacoes_inativo'
-      );
-      const dados: unknown = salvos ? JSON.parse(salvos) : [];
-      if (!Array.isArray(dados)) return [];
-      return dados.filter(
-        (item): item is HistoricoImportacao =>
-          item !== null &&
-          typeof item === 'object' &&
-          typeof item.id === 'string' &&
-          typeof item.empresaId === 'string' &&
-          typeof item.nomeArquivo === 'string' &&
-          typeof item.importadoEm === 'string' &&
-          typeof item.novos === 'number' &&
-          Number.isSafeInteger(item.novos) &&
-          item.novos >= 0 &&
-          typeof item.duplicados === 'number' &&
-          Number.isSafeInteger(item.duplicados) &&
-          item.duplicados >= 0 &&
-          typeof item.totalRegistros === 'number' &&
-          Number.isSafeInteger(item.totalRegistros) &&
-          item.totalRegistros >= 0
-      );
-    } catch {
-      return [];
-    }
-  });
+  >([]);
+  const [uidHistoricoCarregado, setUidHistoricoCarregado] = useState<
+    string | null
+  >(null);
+  const idsHistoricoNuvem = useRef<Set<string>>(new Set());
+  const idsHistoricoEnviando = useRef<Set<string>>(new Set());
+
+  const validarHistoricoImportacao = (
+    item: unknown
+  ): item is HistoricoImportacao => {
+    if (item === null || typeof item !== 'object') return false;
+    const registro = item as Record<string, unknown>;
+    return (
+      typeof registro.id === 'string' &&
+      typeof registro.empresaId === 'string' &&
+      typeof registro.nomeArquivo === 'string' &&
+      typeof registro.importadoEm === 'string' &&
+      typeof registro.novos === 'number' &&
+      Number.isSafeInteger(registro.novos) &&
+      registro.novos >= 0 &&
+      typeof registro.duplicados === 'number' &&
+      Number.isSafeInteger(registro.duplicados) &&
+      registro.duplicados >= 0 &&
+      typeof registro.totalRegistros === 'number' &&
+      Number.isSafeInteger(registro.totalRegistros) &&
+      registro.totalRegistros >= 0
+    );
+  };
 
   useEffect(() => {
-    if (
-      !usuarioAtual ||
-      !lancamentosCarregados ||
-      uidLancamentos !== usuarioAtual.uid
-    )
-      return;
+    setUidHistoricoCarregado(null);
+    setHistoricoImportacoes([]);
+    idsHistoricoNuvem.current = new Set();
+    idsHistoricoEnviando.current = new Set();
+    if (!usuarioAtual) return;
+
+    const uid = usuarioAtual.uid;
+    let ativo = true;
+    const chaveLocal = `prevanzia_historico_importacoes_${uid}`;
+    let locais: HistoricoImportacao[] = [];
+    try {
+      const salvos = localStorage.getItem(chaveLocal);
+      const dados: unknown = salvos ? JSON.parse(salvos) : [];
+      if (Array.isArray(dados))
+        locais = dados.filter(validarHistoricoImportacao);
+    } catch (erro) {
+      console.error('Erro ao ler histórico CSV local:', erro);
+    }
+
+    const cancelar = onSnapshot(
+      collection(db, 'usuarios', uid, 'historicoImportacoes'),
+      (resultado) => {
+        if (!ativo) return;
+        const nuvem = resultado.docs
+          .map((documento) => documento.data())
+          .filter(validarHistoricoImportacao);
+        idsHistoricoNuvem.current = new Set(nuvem.map((item) => item.id));
+        setHistoricoImportacoes((anteriores) => {
+          const unicos = new Map<string, HistoricoImportacao>();
+          for (const item of locais) unicos.set(item.id, item);
+          for (const item of anteriores) unicos.set(item.id, item);
+          for (const item of nuvem) unicos.set(item.id, item);
+          return [...unicos.values()].sort((a, b) =>
+            b.importadoEm.localeCompare(a.importadoEm)
+          );
+        });
+        locais = [];
+        setUidHistoricoCarregado(uid);
+      },
+      (erro) => {
+        console.error('Erro ao ler histórico CSV do Firestore:', erro);
+        // Não grava enquanto a leitura inicial não funcionar.
+      }
+    );
+    return () => {
+      ativo = false;
+      cancelar();
+    };
+  }, [usuarioAtual]);
+
+  useEffect(() => {
+    if (!usuarioAtual || uidHistoricoCarregado !== usuarioAtual.uid) return;
+    const uid = usuarioAtual.uid;
     localStorage.setItem(
-      `prevanzia_historico_importacoes_${usuarioAtual.uid}`,
+      `prevanzia_historico_importacoes_${uid}`,
       JSON.stringify(historicoImportacoes)
     );
-  }, [
-    historicoImportacoes,
-    usuarioAtual,
-    lancamentosCarregados,
-    uidLancamentos,
-  ]);
+    for (const item of historicoImportacoes) {
+      if (
+        idsHistoricoNuvem.current.has(item.id) ||
+        idsHistoricoEnviando.current.has(item.id)
+      )
+        continue;
+      idsHistoricoEnviando.current.add(item.id);
+      setDoc(doc(db, 'usuarios', uid, 'historicoImportacoes', item.id), item)
+        .then(() => {
+          idsHistoricoNuvem.current.add(item.id);
+        })
+        .catch((erro) => console.error('Erro ao enviar histórico CSV:', erro))
+        .finally(() => {
+          idsHistoricoEnviando.current.delete(item.id);
+        });
+    }
+  }, [historicoImportacoes, usuarioAtual, uidHistoricoCarregado]);
 
   // FASE 4 — IMPORTAÇÃO DE DADOS FINANCEIROS POR CSV
 
   // FASE 4 — IMPORTAÇÃO CSV COM VALIDAÇÃO E PROTEÇÃO CONTRA DUPLICAÇÃO
 
   async function importarArquivoCSV(arquivo: File) {
+    if (
+      !usuarioAtual ||
+      uidHistoricoCarregado !== usuarioAtual.uid ||
+      !lancamentosCarregados ||
+      uidLancamentos !== usuarioAtual.uid
+    ) {
+      alert('Aguarde a sincronização dos dados antes de importar um CSV.');
+      return;
+    }
     try {
       if (arquivo.size === 0) {
         alert('O arquivo CSV está vazio.');
@@ -2863,7 +2927,7 @@ function App() {
             >
               <h3 style={{ marginTop: 0 }}>Histórico de importações CSV</h3>
               <p style={{ color: '#64748b', fontSize: '13px' }}>
-                Arquivos processados neste navegador, inclusive importações sem
+                Arquivos processados nesta conta, inclusive importações sem
                 registros novos. Arquivos anteriores à implantação deste
                 histórico não aparecem aqui.
               </p>

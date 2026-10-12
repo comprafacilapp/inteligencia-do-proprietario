@@ -441,23 +441,44 @@ function App() {
   const idsEmEnvio = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!usuarioAtual || !lancamentosCarregados || uidLancamentos !== usuarioAtual.uid) return;
+    if (
+      !usuarioAtual ||
+      !lancamentosCarregados ||
+      uidLancamentos !== usuarioAtual.uid
+    )
+      return;
 
     const chaveLocal = `prevanzia_lancamentos_financeiros_${usuarioAtual.uid}`;
     localStorage.setItem(chaveLocal, JSON.stringify(lancamentosFinanceiros));
 
     for (const lancamento of lancamentosFinanceiros) {
-      if (idsNuvem.current.has(lancamento.id) || idsEmEnvio.current.has(lancamento.id)) continue;
+      if (
+        idsNuvem.current.has(lancamento.id) ||
+        idsEmEnvio.current.has(lancamento.id)
+      )
+        continue;
       idsEmEnvio.current.add(lancamento.id);
-      setDoc(doc(db, 'usuarios', usuarioAtual.uid, 'lancamentos', lancamento.id), lancamento)
-        .then(() => { idsNuvem.current.add(lancamento.id); })
+      setDoc(
+        doc(db, 'usuarios', usuarioAtual.uid, 'lancamentos', lancamento.id),
+        lancamento
+      )
+        .then(() => {
+          idsNuvem.current.add(lancamento.id);
+        })
         .catch((erro) => {
           console.error('Falha ao sincronizar lançamento:', erro);
           // Mantém a cópia local para permitir nova tentativa.
         })
-        .finally(() => { idsEmEnvio.current.delete(lancamento.id); });
+        .finally(() => {
+          idsEmEnvio.current.delete(lancamento.id);
+        });
     }
-  }, [usuarioAtual, lancamentosFinanceiros, lancamentosCarregados, uidLancamentos]);
+  }, [
+    usuarioAtual,
+    lancamentosFinanceiros,
+    lancamentosCarregados,
+    uidLancamentos,
+  ]);
 
   useEffect(() => {
     if (!usuarioAtual) {
@@ -478,55 +499,84 @@ function App() {
       const salvo = localStorage.getItem(chaveLocal);
       const dados: unknown = salvo ? JSON.parse(salvo) : [];
       if (Array.isArray(dados)) {
-        locais = dados.filter((item): item is LancamentoFinanceiro =>
-          item !== null && typeof item === 'object' &&
-          typeof item.id === 'string' && typeof item.empresaId === 'string' &&
-          typeof item.data === 'string' && typeof item.descricao === 'string' &&
-          typeof item.categoria === 'string' &&
-          (item.tipo === 'RECEITA' || item.tipo === 'DESPESA') &&
-          typeof item.valor === 'number' && Number.isFinite(item.valor) && item.valor >= 0
+        locais = dados.filter(
+          (item): item is LancamentoFinanceiro =>
+            item !== null &&
+            typeof item === 'object' &&
+            typeof item.id === 'string' &&
+            typeof item.empresaId === 'string' &&
+            typeof item.data === 'string' &&
+            typeof item.descricao === 'string' &&
+            typeof item.categoria === 'string' &&
+            (item.tipo === 'RECEITA' || item.tipo === 'DESPESA') &&
+            typeof item.valor === 'number' &&
+            Number.isFinite(item.valor) &&
+            item.valor >= 0
         );
       }
     } catch (erro) {
       console.error('Erro ao recuperar lançamentos locais:', erro);
     }
 
-    const referencia = collection(db, 'usuarios', usuarioAtual.uid, 'lancamentos');
-    const cancelarLeitura = onSnapshot(referencia, (resultado) => {
-      if (!ativo) return;
-      const nuvem = resultado.docs.map((documento) => documento.data()).filter(
-        (item): item is LancamentoFinanceiro =>
-          item !== null && typeof item === 'object' &&
-          typeof item.id === 'string' && typeof item.empresaId === 'string' &&
-          typeof item.data === 'string' && typeof item.descricao === 'string' &&
-          typeof item.categoria === 'string' &&
-          (item.tipo === 'RECEITA' || item.tipo === 'DESPESA') &&
-          typeof item.valor === 'number' && Number.isFinite(item.valor) && item.valor >= 0
-      );
-      idsNuvem.current = new Set(nuvem.map((item) => item.id));
-      setLancamentosFinanceiros((anteriores) => {
-        const unicos = new Map<string, LancamentoFinanceiro>();
-        for (const item of locais) unicos.set(item.id, item);
-        for (const item of anteriores) unicos.set(item.id, item);
-        for (const item of nuvem) unicos.set(item.id, item);
-        return Array.from(unicos.values());
-      });
-      locais = [];
-      setUidLancamentos(usuarioAtual.uid);
-      setLancamentosCarregados(true);
-    }, (erro) => {
-      console.error('Erro ao ler lançamentos do Firestore:', erro);
-      // Não libera escrita se a leitura inicial falhar.
-    });
+    const referencia = collection(
+      db,
+      'usuarios',
+      usuarioAtual.uid,
+      'lancamentos'
+    );
+    const cancelarLeitura = onSnapshot(
+      referencia,
+      (resultado) => {
+        if (!ativo) return;
+        const nuvem = resultado.docs
+          .map((documento) => documento.data())
+          .filter(
+            (item): item is LancamentoFinanceiro =>
+              item !== null &&
+              typeof item === 'object' &&
+              typeof item.id === 'string' &&
+              typeof item.empresaId === 'string' &&
+              typeof item.data === 'string' &&
+              typeof item.descricao === 'string' &&
+              typeof item.categoria === 'string' &&
+              (item.tipo === 'RECEITA' || item.tipo === 'DESPESA') &&
+              typeof item.valor === 'number' &&
+              Number.isFinite(item.valor) &&
+              item.valor >= 0
+          );
+        idsNuvem.current = new Set(nuvem.map((item) => item.id));
+        setLancamentosFinanceiros((anteriores) => {
+          const unicos = new Map<string, LancamentoFinanceiro>();
+          for (const item of locais) unicos.set(item.id, item);
+          for (const item of anteriores) unicos.set(item.id, item);
+          for (const item of nuvem) unicos.set(item.id, item);
+          return Array.from(unicos.values());
+        });
+        locais = [];
+        setUidLancamentos(usuarioAtual.uid);
+        setLancamentosCarregados(true);
+      },
+      (erro) => {
+        console.error('Erro ao ler lançamentos do Firestore:', erro);
+        // Não libera escrita se a leitura inicial falhar.
+      }
+    );
 
-    return () => { ativo = false; cancelarLeitura(); };
+    return () => {
+      ativo = false;
+      cancelarLeitura();
+    };
   }, [usuarioAtual]);
   // FASE 4 — HISTÓRICO PERSISTENTE DE IMPORTAÇÕES CSV
   const [historicoImportacoes, setHistoricoImportacoes] = useState<
     HistoricoImportacao[]
   >(() => {
     try {
-      const salvos = localStorage.getItem(auth.currentUser ? `prevanzia_historico_importacoes_${auth.currentUser.uid}` : 'prevanzia_historico_importacoes_inativo');
+      const salvos = localStorage.getItem(
+        auth.currentUser
+          ? `prevanzia_historico_importacoes_${auth.currentUser.uid}`
+          : 'prevanzia_historico_importacoes_inativo'
+      );
       const dados: unknown = salvos ? JSON.parse(salvos) : [];
       if (!Array.isArray(dados)) return [];
       return dados.filter(
@@ -553,12 +603,22 @@ function App() {
   });
 
   useEffect(() => {
-    if (!usuarioAtual || !lancamentosCarregados || uidLancamentos !== usuarioAtual.uid) return;
+    if (
+      !usuarioAtual ||
+      !lancamentosCarregados ||
+      uidLancamentos !== usuarioAtual.uid
+    )
+      return;
     localStorage.setItem(
       `prevanzia_historico_importacoes_${usuarioAtual.uid}`,
       JSON.stringify(historicoImportacoes)
     );
-  }, [historicoImportacoes, usuarioAtual, lancamentosCarregados, uidLancamentos]);
+  }, [
+    historicoImportacoes,
+    usuarioAtual,
+    lancamentosCarregados,
+    uidLancamentos,
+  ]);
 
   // FASE 4 — IMPORTAÇÃO DE DADOS FINANCEIROS POR CSV
 
@@ -2955,9 +3015,8 @@ function App() {
               <label>
                 Valor (R$)
                 <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   required
                   value={valorLancamento}
                   onChange={(evento) => setValorLancamento(evento.target.value)}

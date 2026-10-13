@@ -215,7 +215,10 @@ function calcularDiagnostico(
   } else if (percentualDespesas !== null && percentualDespesas >= 80) {
     alertas.push({
       titulo: 'Despesas elevadas em relação às receitas',
-      nivel: percentualDespesas >= 100 ? 'alto' : 'medio',
+      // Critério inicial de exposição financeira: a partir de 90% das
+      // receitas comprometidas, a prioridade sobe para alta.
+      // A análise permanece limitada aos lançamentos disponíveis.
+      nivel: percentualDespesas >= 90 ? 'alto' : 'medio',
       descricao: `As despesas representam ${percentualDespesas
         .toFixed(1)
         .replace('.', ',')}% das receitas registradas.`,
@@ -303,9 +306,17 @@ function calcularDiagnostico(
             Math.abs(resultado)
           )}.`,
     recomendacao:
-      alertas.length > 0
-        ? 'Investigue os alertas e confira a integridade dos lançamentos antes de decidir.'
-        : 'Acompanhe a evolução dos números e valide se todos os movimentos foram registrados.',
+      registros.length === 0
+        ? 'Importe ou registre lançamentos para receber orientações baseadas nos dados da empresa.'
+        : receitas === 0 && despesas > 0
+        ? `Confira se faltam receitas registradas e revise a categoria de maior despesa${maiorGasto ? ` (${maiorGasto[0]}: ${moeda(maiorGasto[1])})` : ''}. Não é possível avaliar a margem sem receitas.`
+        : percentualDespesas !== null && percentualDespesas >= 80
+        ? `As despesas consomem ${percentualDespesas.toFixed(1).replace('.', ',')}% das receitas. ${maiorGasto ? `Comece examinando a categoria "${maiorGasto[0]}", que soma ${moeda(maiorGasto[1])}. ` : ''}Confira os lançamentos dessa categoria, identifique gastos recorrentes e avalie quais custos podem ser renegociados sem comprometer a operação. Compare com outro período equivalente antes de decidir.`
+        : resultado < 0
+        ? `O período apresenta diferença negativa de ${moeda(Math.abs(resultado))}. Confira a integridade das receitas e despesas e examine os maiores gastos antes de definir uma ação.`
+        : alertas.length > 0
+        ? 'Confira quais indicadores mudaram em relação ao período anterior, investigue as categorias envolvidas e valide a cobertura dos lançamentos antes de decidir.'
+        : 'Acompanhe a evolução das receitas e despesas, confira se todos os lançamentos foram registrados e compare períodos equivalentes.',
   };
 }
 
@@ -2351,7 +2362,7 @@ function App() {
             <div className="recomendacao">
               <div>
                 <p className="sobretitulo">ORIENTAÇÃO INICIAL</p>
-                <h2>Confira os números antes de decidir</h2>
+                <h2>O que investigar agora</h2>
                 <p>{diagnostico.recomendacao}</p>
               </div>
             </div>

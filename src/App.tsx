@@ -215,7 +215,9 @@ function calcularDiagnostico(
   } else if (percentualDespesas !== null && percentualDespesas >= 80) {
     alertas.push({
       titulo: 'Despesas elevadas em relação às receitas',
-      nivel: percentualDespesas >= 100 ? 'alto' : 'medio',
+      // Limite provisório: comprometimento de 95% ou mais exige atenção alta.
+      // O Plano Mestre prevê validação posterior deste critério.
+      nivel: percentualDespesas >= 95 ? 'alto' : 'medio',
       descricao: `As despesas representam ${percentualDespesas
         .toFixed(1)
         .replace('.', ',')}% das receitas registradas.`,
@@ -1168,11 +1170,30 @@ function App() {
     registrosComparacao,
     formatarValorFinanceiro
   );
-  const alertas = diagnostico.alertas;
-  const oportunidades = diagnostico.oportunidades;
+  const dadosFinanceirosIncompletos =
+    diagnostico.quantidade > 0 &&
+    diagnostico.receitas > 0 &&
+    diagnostico.despesas === 0;
+  // Uma única fonte de alertas para todas as seções do aplicativo.
+  const alertas = [
+    ...diagnostico.alertas,
+    ...(dadosFinanceirosIncompletos
+      ? [
+          {
+            titulo: 'Despesas não informadas',
+            descricao:
+              'Existem receitas registradas, mas nenhuma despesa neste período. Verifique se os gastos foram importados ou cadastrados antes de avaliar o resultado.',
+            nivel: 'medio' as const,
+          },
+        ]
+      : []),
+  ];
+  const oportunidades = dadosFinanceirosIncompletos
+    ? []
+    : diagnostico.oportunidades;
   // RADAR EXECUTIVO — prioridades fundamentadas nos registros do período.
   // Valores associados são exposição observada, não perdas nem ganhos previstos.
-  const radarPrioridades = alertas
+  const radarPrioridades = [...alertas]
     .map((alerta) => {
       const titulo = alerta.titulo;
       const exposicao =
@@ -1205,7 +1226,9 @@ function App() {
       : [
           ...new Set([
             ...radarPrioridades.map((alerta) =>
-              alerta.titulo === 'Despesas superiores às receitas'
+              alerta.titulo === 'Despesas não informadas'
+                ? 'Conferir se todas as despesas do período foram importadas ou cadastradas.'
+                : alerta.titulo === 'Despesas superiores às receitas'
                 ? 'Revisar as despesas que excedem as receitas e confirmar a integridade dos registros.'
                 : alerta.titulo === 'Sem receitas registradas'
                 ? 'Verificar se houve receitas não importadas ou ausência de faturamento.'
@@ -1217,7 +1240,7 @@ function App() {
                 ? 'Priorizar a revisão das maiores categorias de despesa.'
                 : 'Conferir os lançamentos e revisar o equilíbrio entre receitas e despesas.'
             ),
-            ...oportunidades,
+            ...(dadosFinanceirosIncompletos ? [] : oportunidades),
             'Conferir se os lançamentos do período estão completos antes de decidir.',
             'Acompanhar os indicadores no próximo período para verificar a evolução.',
           ]),
@@ -1247,38 +1270,11 @@ function App() {
   const [dataLancamento, setDataLancamento] = useState(
     new Date().toLocaleDateString('en-CA')
   );
-  const [decisoes, setDecisoes] = useState<string[]>(() => {
-    try {
-      const salvas = localStorage.getItem('prevanzia_decisoes');
-      const dados: unknown = salvas ? JSON.parse(salvas) : [];
-
-      return Array.isArray(dados) &&
-        dados.every((item) => typeof item === 'string')
-        ? dados
-        : [];
-    } catch {
-      return [];
-    }
-  });
+  // As decisões são carregadas somente depois da autenticação e da leitura da nuvem.
+  const [decisoes, setDecisoes] = useState<string[]>([]);
   const [acompanhamentos, setAcompanhamentos] = useState<
     Record<string, AcompanhamentoDecisao>
-  >(() => {
-    try {
-      const salvos = localStorage.getItem('prevanzia_acompanhamentos');
-      const dados: unknown = salvos ? JSON.parse(salvos) : {};
-      return dados && typeof dados === 'object' && !Array.isArray(dados)
-        ? (dados as Record<string, AcompanhamentoDecisao>)
-        : {};
-    } catch {
-      return {};
-    }
-  });
-  useEffect(() => {
-    localStorage.setItem(
-      'prevanzia_acompanhamentos',
-      JSON.stringify(acompanhamentos)
-    );
-  }, [acompanhamentos]);
+  >({});
 
   const registrarDecisaoVinculada = (texto: string, origem: string) => {
     const descricao = texto.trim();
@@ -1362,54 +1358,190 @@ function App() {
   );
   const [resultadosDecisoes, setResultadosDecisoes] = useState<
     Record<string, 'PENDENTE' | 'POSITIVO' | 'NEGATIVO'>
-  >(() => {
-    try {
-      const salvos = localStorage.getItem('prevanzia_resultados');
-      return salvos ? JSON.parse(salvos) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem(
-      'prevanzia_resultados',
-      JSON.stringify(resultadosDecisoes)
-    );
-  }, [resultadosDecisoes]);
-
+  >({});
   const [impactosDecisoes, setImpactosDecisoes] = useState<
     Record<string, number>
-  >(() => {
-    try {
-      const salvos = localStorage.getItem('prevanzia_impactos');
-      const dados: unknown = salvos ? JSON.parse(salvos) : {};
+  >({});
 
-      if (typeof dados !== 'object' || dados === null || Array.isArray(dados)) {
-        return {};
-      }
+  // FASE 07 — Decisões e avaliações sincronizadas por usuário.
+  // A migração do armazenamento antigo requer autorização, pois suas chaves
+  // não identificavam o usuário que criou os dados.
+  const [uidDecisoesCarregado, setUidDecisoesCarregado] = useState<
+    string | null
+  >(null);
+  const ultimoPacoteDecisoes = useRef('');
+  const envioDecisoesPendente = useRef(false);
+  const usuarioDecisoesRef = useRef<string | null>(null);
 
-      return Object.fromEntries(
-        Object.entries(dados).filter(
-          ([, valor]) =>
-            typeof valor === 'number' && Number.isFinite(valor) && valor >= 0
+  useEffect(() => {
+    setUidDecisoesCarregado(null);
+    setDecisoes([]);
+    setAcompanhamentos({});
+    setResultadosDecisoes({});
+    setImpactosDecisoes({});
+    ultimoPacoteDecisoes.current = '';
+    envioDecisoesPendente.current = false;
+    usuarioDecisoesRef.current = usuarioAtual?.uid ?? null;
+    if (!usuarioAtual) return;
+
+    const uid = usuarioAtual.uid;
+    let ativo = true;
+    const referencia = doc(db, 'usuarios', uid, 'configuracoes', 'decisoes');
+
+    const validarPacote = (valor: unknown) => {
+      const dados =
+        valor && typeof valor === 'object'
+          ? (valor as Record<string, unknown>)
+          : {};
+      const lista =
+        Array.isArray(dados.decisoes) &&
+        dados.decisoes.every((item) => typeof item === 'string')
+          ? (dados.decisoes as string[])
+          : [];
+      const objeto = (v: unknown): Record<string, unknown> =>
+        v && typeof v === 'object' && !Array.isArray(v)
+          ? (v as Record<string, unknown>)
+          : {};
+      const acompanhamentosValidos = Object.fromEntries(
+        Object.entries(objeto(dados.acompanhamentos)).filter(
+          ([, v]) =>
+            v !== null &&
+            typeof v === 'object' &&
+            !Array.isArray(v) &&
+            typeof (v as Record<string, unknown>).origem === 'string' &&
+            typeof (v as Record<string, unknown>).registradaEm === 'string'
         )
-      );
-    } catch {
-      return {};
-    }
-  });
+      ) as Record<string, AcompanhamentoDecisao>;
+      const resultadosValidos = Object.fromEntries(
+        Object.entries(objeto(dados.resultados)).filter(
+          ([, v]) => v === 'PENDENTE' || v === 'POSITIVO' || v === 'NEGATIVO'
+        )
+      ) as Record<string, 'PENDENTE' | 'POSITIVO' | 'NEGATIVO'>;
+      const impactosValidos = Object.fromEntries(
+        Object.entries(objeto(dados.impactos)).filter(
+          ([, v]) => typeof v === 'number' && Number.isFinite(v) && v >= 0
+        )
+      ) as Record<string, number>;
+      return {
+        decisoes: lista,
+        acompanhamentos: acompanhamentosValidos,
+        resultados: resultadosValidos,
+        impactos: impactosValidos,
+      };
+    };
 
-  useEffect(() => {
-    localStorage.setItem(
-      'prevanzia_impactos',
-      JSON.stringify(impactosDecisoes)
+    const aplicar = (pacote: ReturnType<typeof validarPacote>) => {
+      if (!ativo || usuarioDecisoesRef.current !== uid) return;
+      ultimoPacoteDecisoes.current = JSON.stringify(pacote);
+      setDecisoes(pacote.decisoes);
+      setAcompanhamentos(pacote.acompanhamentos);
+      setResultadosDecisoes(pacote.resultados);
+      setImpactosDecisoes(pacote.impactos);
+      setUidDecisoesCarregado(uid);
+    };
+
+    const cancelar = onSnapshot(
+      referencia,
+      async (snapshot) => {
+        if (!ativo || usuarioDecisoesRef.current !== uid) return;
+        if (snapshot.metadata.hasPendingWrites || envioDecisoesPendente.current)
+          return;
+        if (snapshot.exists()) {
+          aplicar(validarPacote(snapshot.data()));
+          return;
+        }
+
+        // Apenas o primeiro acesso, quando ainda não há decisões na nuvem.
+        // Nunca atribuir silenciosamente dados antigos sem UID à conta atual.
+        let legado: ReturnType<typeof validarPacote> | null = null;
+        try {
+          const ler = (chave: string, padrao: unknown) => {
+            const texto = localStorage.getItem(chave);
+            return texto ? (JSON.parse(texto) as unknown) : padrao;
+          };
+          legado = validarPacote({
+            decisoes: ler('prevanzia_decisoes', []),
+            acompanhamentos: ler('prevanzia_acompanhamentos', {}),
+            resultados: ler('prevanzia_resultados', {}),
+            impactos: ler('prevanzia_impactos', {}),
+          });
+        } catch (erro) {
+          console.error('Falha ao ler decisões antigas:', erro);
+        }
+        const possuiLegado =
+          legado &&
+          (legado.decisoes.length > 0 ||
+            Object.keys(legado.acompanhamentos).length > 0 ||
+            Object.keys(legado.resultados).length > 0 ||
+            Object.keys(legado.impactos).length > 0);
+        const autorizado =
+          possuiLegado &&
+          window.confirm(
+            'Existem decisões antigas salvas neste navegador. Elas pertencem a esta conta? ' +
+              'Clique em OK para sincronizá-las com esta conta; Cancelar para não importar.'
+          );
+        const inicial = autorizado && legado ? legado : validarPacote({});
+        try {
+          // merge preserva dados caso outro aparelho crie o documento primeiro.
+          // Uma leitura posterior do Firestore confirma o conteúdo persistido.
+          envioDecisoesPendente.current = true;
+          await setDoc(referencia, inicial);
+          if (ativo && usuarioDecisoesRef.current === uid) aplicar(inicial);
+        } catch (erro) {
+          console.error('Falha ao inicializar decisões no Firestore:', erro);
+          alert(
+            'Não foi possível carregar as decisões na nuvem. Verifique a conexão e as permissões.'
+          );
+        } finally {
+          envioDecisoesPendente.current = false;
+        }
+      },
+      (erro) => {
+        console.error('Falha ao sincronizar decisões:', erro);
+        alert(
+          'Falha na leitura das decisões no Firebase. Não registre novas decisões até corrigir a conexão.'
+        );
+      }
     );
-  }, [impactosDecisoes]);
+
+    return () => {
+      ativo = false;
+      cancelar();
+    };
+  }, [usuarioAtual]);
 
   useEffect(() => {
-    localStorage.setItem('prevanzia_decisoes', JSON.stringify(decisoes));
-  }, [decisoes]);
+    if (!usuarioAtual || uidDecisoesCarregado !== usuarioAtual.uid) return;
+    const pacote = {
+      decisoes,
+      acompanhamentos,
+      resultados: resultadosDecisoes,
+      impactos: impactosDecisoes,
+    };
+    const serializado = JSON.stringify(pacote);
+    if (serializado === ultimoPacoteDecisoes.current) return;
+    ultimoPacoteDecisoes.current = serializado;
+    const uid = usuarioAtual.uid;
+    envioDecisoesPendente.current = true;
+    setDoc(doc(db, 'usuarios', uid, 'configuracoes', 'decisoes'), pacote)
+      .catch((erro) => {
+        console.error('Falha ao salvar decisões:', erro);
+        ultimoPacoteDecisoes.current = '';
+        alert(
+          'Não foi possível salvar a decisão na nuvem. Confira sua conexão.'
+        );
+      })
+      .finally(() => {
+        envioDecisoesPendente.current = false;
+      });
+  }, [
+    usuarioAtual,
+    uidDecisoesCarregado,
+    decisoes,
+    acompanhamentos,
+    resultadosDecisoes,
+    impactosDecisoes,
+  ]);
 
   const secoes = [
     'Visão geral',
@@ -1489,9 +1621,9 @@ function App() {
         <div className="aviso-demo">
           <strong>Análise dos lançamentos cadastrados</strong>
           <span>
-            Indicadores calculados com os dados registrados neste navegador. Não
+            Indicadores calculados com os lançamentos disponíveis na conta. Não
             incluem contas a receber, contas a pagar, impostos ou custos não
-            informados. Os lançamentos de teste continuam sendo fictícios.
+            informados. Registros de teste não representam uma empresa real.
           </span>
         </div>
 
@@ -1505,16 +1637,22 @@ function App() {
                 <h2>
                   {diagnostico.quantidade === 0
                     ? 'Sem dados no período'
+                    : diagnostico.despesas === 0
+                    ? 'Dados insuficientes para avaliar'
                     : diagnostico.resultado < 0
                     ? 'Atenção necessária'
                     : alertas.length > 0
                     ? 'Pontos para investigar'
                     : 'Resultado não negativo'}
                 </h2>
-                <p>{diagnostico.resumo}</p>
+                <p>
+                  {diagnostico.quantidade > 0 && diagnostico.despesas === 0
+                    ? 'Existem receitas registradas, mas nenhuma despesa informada neste período. Não é possível avaliar o resultado real da empresa com segurança.'
+                    : diagnostico.resumo}
+                </p>
               </div>
               <span className="saude-indicador">
-                {alertas.length} alerta(s)
+                {radarPrioridades.length} alerta(s)
               </span>
             </section>
 
@@ -1543,7 +1681,40 @@ function App() {
                     {fimAtual.split('-').reverse().join('/')}. Os valores
                     representam movimentos registrados, não perdas previstas.
                   </p>
-                  {radarPrioridades.length === 0 ? (
+                  {dadosFinanceirosIncompletos ? (
+                    <div
+                      style={{
+                        marginTop: '18px',
+                        padding: '18px',
+                        border: '1px solid #e9d8b5',
+                        borderRadius: '12px',
+                        background: '#fffaf0',
+                      }}
+                    >
+                      <strong style={{ display: 'block', marginBottom: '8px' }}>
+                        Verificar despesas não informadas
+                      </strong>
+                      <p style={{ margin: '0 0 12px', lineHeight: 1.6 }}>
+                        Existem receitas registradas, mas nenhuma despesa neste
+                        período. Antes de avaliar a situação financeira,
+                        confirme se os gastos foram importados ou cadastrados. A
+                        ausência de despesas não comprova lucro.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setSecao('Dados financeiros')}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          border: '1px solid #214b58',
+                          background: '#fff',
+                          color: '#214b58',
+                        }}
+                      >
+                        Conferir dados financeiros
+                      </button>
+                    </div>
+                  ) : radarPrioridades.length === 0 ? (
                     <p className="subtitulo">
                       Nenhum alerta disparado pelas regras atuais. Mantenha o
                       acompanhamento.
@@ -1623,51 +1794,61 @@ function App() {
                       })}
                     </div>
                   )}
-                  <h3>Plano de ação sugerido</h3>
-                  <p className="subtitulo">
-                    Recomendações baseadas nos dados disponíveis; não são
-                    garantias de resultado.
-                  </p>
-                  <div
-                    style={{ display: 'grid', gap: '12px', marginTop: '12px' }}
-                  >
-                    {radarAcoes.map((acao, indice) => {
-                      const indiceDecisao = localizarDecisaoRadar(acao);
-                      return (
-                        <article className="oportunidade" key={acao}>
-                          <span>{String(indice + 1).padStart(2, '0')}</span>
-                          <div>
-                            <p>{acao}</p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (indiceDecisao < 0) {
-                                  registrarDecisaoVinculada(
-                                    acao,
-                                    'Plano de ação do Radar'
-                                  );
-                                }
-                                setSecao('Decisões');
-                              }}
-                              style={{
-                                marginTop: '10px',
-                                padding: '9px 12px',
-                                borderRadius: '8px',
-                                border: '1px solid #214b58',
-                                background: '#fff',
-                                color: '#214b58',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              {indiceDecisao >= 0
-                                ? 'Ver decisão registrada'
-                                : 'Registrar esta ação'}
-                            </button>
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
+
+                  {!dadosFinanceirosIncompletos && radarAcoes.length > 0 && (
+                    <>
+                      <h3>Plano de ação sugerido</h3>
+                      <p className="subtitulo">
+                        Recomendações baseadas nos dados disponíveis; não são
+                        garantias de resultado.
+                      </p>
+
+                      <div
+                        style={{
+                          display: 'grid',
+                          gap: '12px',
+                          marginTop: '12px',
+                        }}
+                      >
+                        {radarAcoes.map((acao, indice) => {
+                          const indiceDecisao = localizarDecisaoRadar(acao);
+                          return (
+                            <article className="oportunidade" key={acao}>
+                              <span>{String(indice + 1).padStart(2, '0')}</span>
+                              <div>
+                                <p>{acao}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (indiceDecisao < 0) {
+                                      registrarDecisaoVinculada(
+                                        acao,
+                                        'Plano de ação do Radar'
+                                      );
+                                    }
+                                    setSecao('Decisões');
+                                  }}
+                                  style={{
+                                    marginTop: '10px',
+                                    padding: '9px 12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid #214b58',
+                                    background: '#fff',
+                                    color: '#214b58',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {indiceDecisao >= 0
+                                    ? 'Ver decisão registrada'
+                                    : 'Registrar esta ação'}
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </section>
@@ -1778,7 +1959,9 @@ function App() {
                 </div>
                 {oportunidades.length === 0 ? (
                   <p className="subtitulo">
-                    Cadastre lançamentos para receber sugestões.
+                    {dadosFinanceirosIncompletos
+                      ? 'Ainda não é possível identificar oportunidades confiáveis: confira primeiro as despesas ausentes.'
+                      : 'Não foram identificadas oportunidades com os dados disponíveis.'}
                   </p>
                 ) : (
                   oportunidades.map((item, indice) => (
@@ -1794,11 +1977,17 @@ function App() {
               <div>
                 <p className="sobretitulo">PRÓXIMA DECISÃO</p>
                 <h2>
-                  {alertas.length > 0
+                  {dadosFinanceirosIncompletos
+                    ? 'Confira as despesas do período'
+                    : alertas.length > 0
                     ? 'Investigue os pontos de atenção'
                     : 'Mantenha os registros atualizados'}
                 </h2>
-                <p>{diagnostico.recomendacao}</p>
+                <p>
+                  {dadosFinanceirosIncompletos
+                    ? 'Antes de decidir, confirme se os gastos foram registrados. Sem essas informações, o saldo positivo não comprova lucro.'
+                    : diagnostico.recomendacao}
+                </p>
               </div>
               <span className="recomendacao-etiqueta">
                 Análise automática dos registros
@@ -1975,7 +2164,11 @@ function App() {
                 {alertas.length} pontos de atenção
               </span>
             </div>
-            <p className="subtitulo">{diagnostico.resumo}</p>
+            <p className="subtitulo">
+              {dadosFinanceirosIncompletos
+                ? 'Existem receitas registradas, mas nenhuma despesa informada. Os dados ainda não permitem avaliar o resultado financeiro com segurança.'
+                : diagnostico.resumo}
+            </p>
             <p>
               Receitas:{' '}
               <strong>{formatarValorFinanceiro(diagnostico.receitas)}</strong> •
@@ -2107,6 +2300,10 @@ function App() {
               <span className="contador">{decisoes.length} registradas</span>
             </div>
 
+            <p className="subtitulo" style={{ marginBottom: '16px' }}>
+              Registre as ações escolhidas para acompanhar seus efeitos. As
+              decisões são sincronizadas com sua conta na nuvem.
+            </p>
             <form
               onSubmit={(evento) => {
                 evento.preventDefault();
@@ -2148,7 +2345,7 @@ function App() {
 
             {decisoes.length === 0 ? (
               <p className="subtitulo">
-                Nenhuma decisão registrada nesta sessão.
+                Nenhuma decisão registrada nesta conta.
               </p>
             ) : (
               <div style={{ marginTop: '20px' }}>
@@ -2327,7 +2524,6 @@ function App() {
                 Soma dos valores das decisões com resultado positivo.
               </p>
             </div>
-            {/* COLE O CÓDIGO NOVO AQUI */}
             <div
               style={{
                 padding: '20px',

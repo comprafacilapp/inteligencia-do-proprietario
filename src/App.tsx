@@ -215,9 +215,7 @@ function calcularDiagnostico(
   } else if (percentualDespesas !== null && percentualDespesas >= 80) {
     alertas.push({
       titulo: 'Despesas elevadas em relação às receitas',
-      // Limite provisório: comprometimento de 95% ou mais exige atenção alta.
-      // O Plano Mestre prevê validação posterior deste critério.
-      nivel: percentualDespesas >= 95 ? 'alto' : 'medio',
+      nivel: percentualDespesas >= 100 ? 'alto' : 'medio',
       descricao: `As despesas representam ${percentualDespesas
         .toFixed(1)
         .replace('.', ',')}% das receitas registradas.`,
@@ -1334,23 +1332,57 @@ function App() {
 
   const registrarAvaliacao = (indice: number) => {
     const chave = String(indice);
-    setAcompanhamentos((anteriores) => {
-      const acompanhamento = anteriores[chave];
-      if (!acompanhamento) return anteriores;
-      return {
-        ...anteriores,
-        [chave]: {
-          ...acompanhamento,
-          avaliadaEm: new Date().toISOString(),
-          inicioAvaliacao: inicioAtual,
-          fimAvaliacao: fimAtual,
-          quantidadeAvaliacao: diagnostico.quantidade,
-          receitasAvaliacao: diagnostico.receitas,
-          despesasAvaliacao: diagnostico.despesas,
-          resultadoAvaliacao: diagnostico.resultado,
-        },
-      };
-    });
+    const acompanhamento = acompanhamentos[chave];
+    if (!acompanhamento) return;
+
+    const dias = (inicio: string, fim: string) => {
+      const a = Date.parse(`${inicio}T12:00:00Z`);
+      const b = Date.parse(`${fim}T12:00:00Z`);
+      return Number.isFinite(a) && Number.isFinite(b) && b >= a
+        ? Math.round((b - a) / 86400000) + 1
+        : 0;
+    };
+
+    if (inicioAtual <= acompanhamento.fimBase) {
+      alert(
+        'Escolha um período posterior ao período-base da decisão. Não é possível medir o resultado com os mesmos dados ou com períodos sobrepostos.'
+      );
+      return;
+    }
+
+    if (
+      dias(inicioAtual, fimAtual) !==
+      dias(acompanhamento.inicioBase, acompanhamento.fimBase)
+    ) {
+      alert(
+        'Os períodos têm durações diferentes. Selecione períodos de mesma duração para uma comparação válida.'
+      );
+      return;
+    }
+
+    if (
+      (acompanhamento.quantidadeBase ?? 0) === 0 ||
+      diagnostico.quantidade === 0
+    ) {
+      alert(
+        'Faltam lançamentos financeiros em um dos períodos. Importe dados reais antes de registrar a avaliação.'
+      );
+      return;
+    }
+
+    setAcompanhamentos((anteriores) => ({
+      ...anteriores,
+      [chave]: {
+        ...anteriores[chave],
+        avaliadaEm: new Date().toISOString(),
+        inicioAvaliacao: inicioAtual,
+        fimAvaliacao: fimAtual,
+        quantidadeAvaliacao: diagnostico.quantidade,
+        receitasAvaliacao: diagnostico.receitas,
+        despesasAvaliacao: diagnostico.despesas,
+        resultadoAvaliacao: diagnostico.resultado,
+      },
+    }));
   };
 
   const [alertaSelecionado, setAlertaSelecionado] = useState<string | null>(
@@ -1542,6 +1574,100 @@ function App() {
     resultadosDecisoes,
     impactosDecisoes,
   ]);
+
+  // Valores informados pelo usuário, não ganhos causalmente comprovados.
+  const impactoFinanceiroAvaliado = (tipo: 'POSITIVO' | 'NEGATIVO') => {
+    const duracao = (inicio: string, fim: string) => {
+      const a = Date.parse(`${inicio}T12:00:00Z`);
+      const b = Date.parse(`${fim}T12:00:00Z`);
+
+      return Number.isFinite(a) && Number.isFinite(b) && b >= a
+        ? Math.round((b - a) / 86400000) + 1
+        : 0;
+    };
+
+    return Object.entries(impactosDecisoes)
+      .filter(([indice, valor]) => {
+        const acompanhamento = acompanhamentos[indice];
+
+        if (
+          resultadosDecisoes[indice] !== tipo ||
+          !Number.isFinite(valor) ||
+          valor < 0 ||
+          !acompanhamento?.avaliadaEm ||
+          !acompanhamento.inicioBase ||
+          !acompanhamento.fimBase ||
+          !acompanhamento.inicioAvaliacao ||
+          !acompanhamento.fimAvaliacao ||
+          (acompanhamento.quantidadeBase ?? 0) <= 0 ||
+          (acompanhamento.quantidadeAvaliacao ?? 0) <= 0
+        ) {
+          return false;
+        }
+
+        const diasBase = duracao(
+          acompanhamento.inicioBase,
+          acompanhamento.fimBase
+        );
+
+        return (
+          acompanhamento.inicioAvaliacao > acompanhamento.fimBase &&
+          diasBase > 0 &&
+          diasBase ===
+            duracao(acompanhamento.inicioAvaliacao, acompanhamento.fimAvaliacao)
+        );
+      })
+      .reduce((total, [, valor]) => total + valor, 0);
+  };
+
+  const decisaoPossuiAvaliacaoValida = (indice: number): boolean => {
+    const a = acompanhamentos[String(indice)];
+    if (
+      !a?.avaliadaEm ||
+      !a.inicioBase ||
+      !a.fimBase ||
+      !a.inicioAvaliacao ||
+      !a.fimAvaliacao ||
+      (a.quantidadeBase ?? 0) <= 0 ||
+      (a.quantidadeAvaliacao ?? 0) <= 0
+    )
+      return false;
+    const dias = (inicio: string, fim: string) => {
+      const primeiro = Date.parse(`${inicio}T12:00:00Z`);
+      const ultimo = Date.parse(`${fim}T12:00:00Z`);
+      return Number.isFinite(primeiro) &&
+        Number.isFinite(ultimo) &&
+        ultimo >= primeiro
+        ? Math.round((ultimo - primeiro) / 86400000) + 1
+        : 0;
+    };
+    const base = dias(a.inicioBase, a.fimBase);
+    return (
+      a.inicioAvaliacao > a.fimBase &&
+      base > 0 &&
+      base === dias(a.inicioAvaliacao, a.fimAvaliacao)
+    );
+  };
+
+  const positivasAvaliadas = decisoes.filter(
+    (_, i) =>
+      resultadosDecisoes[String(i)] === 'POSITIVO' &&
+      decisaoPossuiAvaliacaoValida(i)
+  ).length;
+  const negativasAvaliadas = decisoes.filter(
+    (_, i) =>
+      resultadosDecisoes[String(i)] === 'NEGATIVO' &&
+      decisaoPossuiAvaliacaoValida(i)
+  ).length;
+
+  const ganhosAvaliados = impactoFinanceiroAvaliado('POSITIVO');
+  const perdasAvaliadas = impactoFinanceiroAvaliado('NEGATIVO');
+
+  const formatarImpactoAvaliado = (valor: number) =>
+    valor.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
 
   const secoes = [
     'Visão geral',
@@ -2302,7 +2428,7 @@ function App() {
 
             <p className="subtitulo" style={{ marginBottom: '16px' }}>
               Registre as ações escolhidas para acompanhar seus efeitos. As
-              decisões são sincronizadas com sua conta na nuvem.
+              decisões desta versão ficam salvas neste navegador.
             </p>
             <form
               onSubmit={(evento) => {
@@ -2400,12 +2526,7 @@ function App() {
               </p>
 
               <strong style={{ fontSize: '28px', color: '#166534' }}>
-                {
-                  decisoes.filter(
-                    (_, indice) =>
-                      resultadosDecisoes[String(indice)] === 'POSITIVO'
-                  ).length
-                }
+                {positivasAvaliadas}
               </strong>
             </div>
 
@@ -2423,12 +2544,7 @@ function App() {
               </p>
 
               <strong style={{ fontSize: '28px', color: '#b91c1c' }}>
-                {
-                  decisoes.filter(
-                    (_, indice) =>
-                      resultadosDecisoes[String(indice)] === 'NEGATIVO'
-                  ).length
-                }
+                {negativasAvaliadas}
               </strong>
             </div>
 
@@ -2446,13 +2562,7 @@ function App() {
               </p>
 
               <strong style={{ fontSize: '28px', color: '#c2410c' }}>
-                {
-                  decisoes.filter(
-                    (_, indice) =>
-                      !resultadosDecisoes[String(indice)] ||
-                      resultadosDecisoes[String(indice)] === 'PENDENTE'
-                  ).length
-                }
+                {decisoes.length - positivasAvaliadas - negativasAvaliadas}
               </strong>
             </div>
 
@@ -2468,25 +2578,15 @@ function App() {
               <p style={{ margin: '0 0 8px' }}>Taxa de sucesso das decisões</p>
 
               <strong style={{ fontSize: '28px', color: '#3730a3' }}>
-                {(() => {
-                  const positivas = decisoes.filter(
-                    (_, indice) =>
-                      resultadosDecisoes[String(indice)] === 'POSITIVO'
-                  ).length;
-
-                  const negativas = decisoes.filter(
-                    (_, indice) =>
-                      resultadosDecisoes[String(indice)] === 'NEGATIVO'
-                  ).length;
-
-                  const avaliadas = positivas + negativas;
-
-                  return avaliadas === 0
-                    ? 'Aguardando avaliações'
-                    : `${((positivas / avaliadas) * 100)
-                        .toFixed(1)
-                        .replace('.', ',')}%`;
-                })()}
+                {positivasAvaliadas + negativasAvaliadas === 0
+                  ? 'Aguardando avaliações'
+                  : `${(
+                      (positivasAvaliadas /
+                        (positivasAvaliadas + negativasAvaliadas)) *
+                      100
+                    )
+                      .toFixed(1)
+                      .replace('.', ',')}%`}
               </strong>
             </div>
 
@@ -2500,7 +2600,7 @@ function App() {
               }}
             >
               <p style={{ margin: '0 0 8px' }}>
-                Ganhos financeiros registrados
+                Valores positivos informados após avaliação
               </p>
 
               <strong
@@ -2509,19 +2609,12 @@ function App() {
                   color: '#214b58',
                 }}
               >
-                {Object.entries(impactosDecisoes)
-                  .filter(
-                    ([indice]) => resultadosDecisoes[indice] === 'POSITIVO'
-                  )
-                  .reduce((total, [, valor]) => total + valor, 0)
-                  .toLocaleString('pt-BR', {
-                    style: 'currency',
-                    currency: 'BRL',
-                  })}
+                {formatarImpactoAvaliado(ganhosAvaliados)}
               </strong>
 
               <p style={{ fontSize: '13px', marginTop: '8px' }}>
-                Soma dos valores das decisões com resultado positivo.
+                Valores positivos informados para decisões com avaliação
+                financeira válida.
               </p>
             </div>
             <div
@@ -2533,7 +2626,7 @@ function App() {
               }}
             >
               <p style={{ margin: '0 0 8px' }}>
-                Perdas financeiras registradas
+                Valores negativos informados após avaliação
               </p>
 
               <strong
@@ -2542,19 +2635,12 @@ function App() {
                   color: '#b42318',
                 }}
               >
-                {Object.entries(impactosDecisoes)
-                  .filter(
-                    ([indice]) => resultadosDecisoes[indice] === 'NEGATIVO'
-                  )
-                  .reduce((total, [, valor]) => total + valor, 0)
-                  .toLocaleString('pt-BR', {
-                    style: 'currency',
-                    currency: 'BRL',
-                  })}
+                {formatarImpactoAvaliado(perdasAvaliadas)}
               </strong>
 
               <p style={{ fontSize: '13px', marginTop: '8px' }}>
-                Soma dos valores das decisões com resultado negativo.
+                Valores negativos informados para decisões com avaliação
+                financeira válida.
               </p>
             </div>
 
@@ -2566,7 +2652,7 @@ function App() {
                 marginBottom: '20px',
               }}
             >
-              <p style={{ margin: '0 0 8px' }}>Saldo financeiro das decisões</p>
+              <p style={{ margin: '0 0 8px' }}>Saldo dos impactos informados</p>
 
               <strong
                 style={{
@@ -2574,25 +2660,12 @@ function App() {
                   color: '#214b58',
                 }}
               >
-                {(
-                  Object.entries(impactosDecisoes)
-                    .filter(
-                      ([indice]) => resultadosDecisoes[indice] === 'POSITIVO'
-                    )
-                    .reduce((total, [, valor]) => total + valor, 0) -
-                  Object.entries(impactosDecisoes)
-                    .filter(
-                      ([indice]) => resultadosDecisoes[indice] === 'NEGATIVO'
-                    )
-                    .reduce((total, [, valor]) => total + valor, 0)
-                ).toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
+                {formatarImpactoAvaliado(ganhosAvaliados - perdasAvaliadas)}
               </strong>
 
               <p style={{ fontSize: '13px', marginTop: '8px' }}>
-                Ganhos registrados menos perdas registradas.
+                Diferença entre valores informados após avaliações válidas; não
+                comprova causalidade.
               </p>
             </div>
 
@@ -2610,31 +2683,19 @@ function App() {
               </p>
 
               <strong style={{ fontSize: '28px', color: '#0369a1' }}>
-                {(() => {
-                  const ganhos = Object.entries(impactosDecisoes)
-                    .filter(
-                      ([indice]) => resultadosDecisoes[indice] === 'POSITIVO'
+                {ganhosAvaliados + perdasAvaliadas === 0
+                  ? 'Aguardando resultados financeiros'
+                  : `${(
+                      (ganhosAvaliados / (ganhosAvaliados + perdasAvaliadas)) *
+                      100
                     )
-                    .reduce((total, [, valor]) => total + valor, 0);
-
-                  const perdas = Object.entries(impactosDecisoes)
-                    .filter(
-                      ([indice]) => resultadosDecisoes[indice] === 'NEGATIVO'
-                    )
-                    .reduce((total, [, valor]) => total + valor, 0);
-
-                  const total = ganhos + perdas;
-
-                  return total === 0
-                    ? 'Aguardando resultados financeiros'
-                    : `${((ganhos / total) * 100)
-                        .toFixed(1)
-                        .replace('.', ',')}%`;
-                })()}
+                      .toFixed(1)
+                      .replace('.', ',')}%`}
               </strong>
 
               <p style={{ fontSize: '13px', marginTop: '8px' }}>
-                Participação dos ganhos no total de ganhos e perdas registrados.
+                Participação dos valores positivos informados no total de
+                impactos avaliados.
               </p>
             </div>
 
@@ -2652,7 +2713,7 @@ function App() {
                         <strong>{decisao}</strong>
                         {/* CÓDIGO NOVO COMEÇA AQUI */}
                         <p>
-                          Resultado informado:{' '}
+                          Classificação informada:{' '}
                           {resultadosDecisoes[String(indice)] || 'PENDENTE'}
                         </p>
                         {acompanhamentos[String(indice)] &&
@@ -2828,12 +2889,71 @@ function App() {
                               <button
                                 key={resultado}
                                 type="button"
-                                onClick={() =>
+                                onClick={() => {
+                                  const acompanhamento =
+                                    acompanhamentos[String(indice)];
+
+                                  if (resultado !== 'PENDENTE') {
+                                    const temDados =
+                                      acompanhamento &&
+                                      (acompanhamento.quantidadeBase ?? 0) >
+                                        0 &&
+                                      (acompanhamento.quantidadeAvaliacao ??
+                                        0) > 0;
+
+                                    const periodoPosterior =
+                                      acompanhamento?.inicioAvaliacao &&
+                                      acompanhamento.inicioAvaliacao >
+                                        acompanhamento.fimBase;
+
+                                    const duracao = (
+                                      inicio: string,
+                                      fim: string
+                                    ) => {
+                                      const a = Date.parse(
+                                        `${inicio}T12:00:00Z`
+                                      );
+                                      const b = Date.parse(`${fim}T12:00:00Z`);
+
+                                      return Number.isFinite(a) &&
+                                        Number.isFinite(b) &&
+                                        b >= a
+                                        ? Math.round((b - a) / 86400000) + 1
+                                        : 0;
+                                    };
+
+                                    const periodosComparaveis =
+                                      acompanhamento &&
+                                      duracao(
+                                        acompanhamento.inicioBase,
+                                        acompanhamento.fimBase
+                                      ) > 0 &&
+                                      duracao(
+                                        acompanhamento.inicioBase,
+                                        acompanhamento.fimBase
+                                      ) ===
+                                        duracao(
+                                          acompanhamento.inicioAvaliacao ?? '',
+                                          acompanhamento.fimAvaliacao ?? ''
+                                        );
+
+                                    if (
+                                      !temDados ||
+                                      !periodoPosterior ||
+                                      !periodosComparaveis
+                                    ) {
+                                      alert(
+                                        'Esta decisão ainda não possui uma avaliação financeira válida. Registre uma comparação entre períodos posteriores e equivalentes antes de classificá-la.'
+                                      );
+                                      return;
+                                    }
+                                  }
+
                                   setResultadosDecisoes((anteriores) => ({
                                     ...anteriores,
                                     [String(indice)]: resultado,
-                                  }))
-                                }
+                                  }));
+                                }}
                                 style={{
                                   padding: '8px 12px',
                                   borderRadius: '8px',

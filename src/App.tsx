@@ -639,7 +639,7 @@ function App() {
       if (Array.isArray(dados))
         locais = dados.filter(validarHistoricoImportacao);
     } catch (erro) {
-      console.error('Erro ao ler histórico CSV local:', erro);
+      console.error('Erro ao ler histórico de arquivos local:', erro);
     }
 
     const cancelar = onSnapshot(
@@ -663,7 +663,7 @@ function App() {
         setUidHistoricoCarregado(uid);
       },
       (erro) => {
-        console.error('Erro ao ler histórico CSV do Firestore:', erro);
+        console.error('Erro ao ler histórico de arquivos do Firestore:', erro);
         // Não grava enquanto a leitura inicial não funcionar.
       }
     );
@@ -691,7 +691,9 @@ function App() {
         .then(() => {
           idsHistoricoNuvem.current.add(item.id);
         })
-        .catch((erro) => console.error('Erro ao enviar histórico CSV:', erro))
+        .catch((erro) =>
+          console.error('Erro ao enviar histórico de arquivos:', erro)
+        )
         .finally(() => {
           idsHistoricoEnviando.current.delete(item.id);
         });
@@ -719,13 +721,123 @@ function App() {
     valor: '',
   });
 
+  // Importa a primeira aba do Excel; usa o mesmo fluxo de mapeamento,
+  // validação de registros, histórico e deduplicação do CSV.
+  async function importarArquivoExcel(
+    arquivo: File,
+    mapaConfirmado?: Record<CampoCSV, string>
+  ) {
+    if (arquivo.size === 0 || arquivo.size > 5 * 1024 * 1024) {
+      alert('O arquivo deve ter entre 1 byte e 5 MB.');
+      return;
+    }
+    try {
+      // A API oficial de read-excel-file retorna uma matriz de linhas.
+      // Algumas versões/empacotamentos podem devolver um objeto com rows.
+      // Não tratar objetos arbitrários como linhas: informar a estrutura real.
+      // @ts-ignore -- declarações ausentes para a entrada browser neste projeto
+      const moduloExcel = await import('read-excel-file/browser');
+      const leitorExcel = moduloExcel.default;
+      type CelulaExcel = string | number | boolean | Date | null;
+      const resultadoExcel: unknown = await leitorExcel(arquivo);
+      console.log('RESULTADO REAL DO EXCEL:', resultadoExcel);
+
+      const objetoExcel =
+        resultadoExcel !== null && typeof resultadoExcel === 'object'
+          ? (resultadoExcel as Record<string, unknown>)
+          : null;
+      // A biblioteca retorna abas no formato { sheet, data }.
+      const primeiraAba =
+        Array.isArray(resultadoExcel) && resultadoExcel.length > 0
+          ? resultadoExcel[0]
+          : null;
+
+      const possiveisLinhas =
+        primeiraAba && typeof primeiraAba === 'object' && 'data' in primeiraAba
+          ? primeiraAba.data
+          : Array.isArray(resultadoExcel)
+          ? resultadoExcel
+          : objetoExcel?.rows;
+
+      if (
+        !Array.isArray(possiveisLinhas) ||
+        !possiveisLinhas.every((linha: unknown) => Array.isArray(linha))
+      ) {
+        const formato = Array.isArray(resultadoExcel)
+          ? 'lista com elementos que não são linhas'
+          : objetoExcel
+          ? `objeto com propriedades: ${
+              Object.keys(objetoExcel).join(', ') || '(nenhuma)'
+            }`
+          : typeof resultadoExcel;
+        throw new Error(
+          `A leitura do Excel não retornou linhas válidas (${formato}). ` +
+            'Confira se o arquivo é realmente .xlsx e não um arquivo renomeado.'
+        );
+      }
+      const planilha = possiveisLinhas as CelulaExcel[][];
+
+      const linhas = planilha
+        .map((linha, indiceLinha) =>
+          linha.map((celula, indiceColuna) => {
+            if (celula === null || celula === undefined) return '';
+            if (celula instanceof Date) {
+              return `${celula.getUTCFullYear()}-${String(
+                celula.getUTCMonth() + 1
+              ).padStart(2, '0')}-${String(celula.getUTCDate()).padStart(
+                2,
+                '0'
+              )}`;
+            }
+            if (typeof celula === 'number' && indiceLinha > 0) {
+              // Datas numéricas do Excel são convertidas apenas em colunas
+              // cujo cabeçalho identifica inequivocamente o campo data.
+              const titulo = String(planilha[0]?.[indiceColuna] ?? '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]/g, '');
+              if (
+                (titulo === 'data' ||
+                  titulo.startsWith('data') ||
+                  titulo === 'date' ||
+                  titulo === 'dtmovimento') &&
+                celula >= 1 &&
+                celula <= 2958465 &&
+                Number.isInteger(celula)
+              ) {
+                const dia = new Date(
+                  Date.UTC(1899, 11, 30) + celula * 86400000
+                );
+                return dia.toISOString().slice(0, 10);
+              }
+            }
+            return String(celula).trim();
+          })
+        )
+        .filter((linha) => linha.some((valor) => valor !== ''));
+      if (linhas.length < 2) {
+        alert('A primeira aba do Excel não contém lançamentos.');
+        return;
+      }
+      await importarArquivoCSV(arquivo, mapaConfirmado, linhas);
+    } catch (erro) {
+      console.error('Falha ao ler planilha Excel:', erro);
+      alert(
+        'Erro ao importar Excel: ' +
+          (erro instanceof Error ? erro.message : String(erro))
+      );
+    }
+  }
+
   // FASE 4 — IMPORTAÇÃO DE DADOS FINANCEIROS POR CSV
 
   // FASE 4 — IMPORTAÇÃO CSV COM VALIDAÇÃO E PROTEÇÃO CONTRA DUPLICAÇÃO
 
   async function importarArquivoCSV(
     arquivo: File,
-    mapaConfirmado?: Record<CampoCSV, string>
+    mapaConfirmado?: Record<CampoCSV, string>,
+    linhasExcel?: string[][]
   ) {
     if (
       !usuarioAtual ||
@@ -733,103 +845,113 @@ function App() {
       !lancamentosCarregados ||
       uidLancamentos !== usuarioAtual.uid
     ) {
-      alert('Aguarde a sincronização dos dados antes de importar um CSV.');
+      alert('Aguarde a sincronização dos dados antes de importar o arquivo.');
       return;
     }
     try {
       if (arquivo.size === 0) {
-        alert('O arquivo CSV está vazio.');
+        alert('O arquivo está vazio.');
         return;
       }
 
       if (arquivo.size > 5 * 1024 * 1024) {
-        alert('O arquivo CSV deve ter no máximo 5 MB.');
+        alert('O arquivo deve ter no máximo 5 MB.');
         return;
       }
 
-      const conteudo = (await arquivo.text())
-        .replace(/^\uFEFF/, '')
-        .replace(/\r\n?/g, '\n');
+      // CSV e Excel convergem para as mesmas validações e deduplicação.
+      const linhas: string[][] = linhasExcel
+        ? linhasExcel.map((linha) => [...linha])
+        : [];
+      if (!linhasExcel) {
+        const conteudo = (await arquivo.text())
+          .replace(/^\uFEFF/, '')
+          .replace(/\r\n?/g, '\n');
 
-      if (!conteudo.trim()) {
-        alert('O arquivo CSV está vazio.');
-        return;
-      }
-
-      // Detecta o separador fora de campos entre aspas. Aceita CSV com
-      // ponto e vírgula, vírgula ou tabulação, sem confundir valores decimais.
-      const primeiraLinha = conteudo.split('\n')[0];
-      const contagens = new Map<string, number>([
-        [';', 0],
-        [',', 0],
-        ['\t', 0],
-      ]);
-      let aspasCabecalho = false;
-      for (let i = 0; i < primeiraLinha.length; i++) {
-        const caractere = primeiraLinha[i];
-        if (caractere === '"') {
-          if (aspasCabecalho && primeiraLinha[i + 1] === '"') i++;
-          else aspasCabecalho = !aspasCabecalho;
-        } else if (!aspasCabecalho && contagens.has(caractere)) {
-          contagens.set(caractere, (contagens.get(caractere) ?? 0) + 1);
+        if (!conteudo.trim()) {
+          alert('O arquivo está vazio.');
+          return;
         }
-      }
-      const separador = [...contagens.entries()].sort(
-        (a, b) => b[1] - a[1]
-      )[0][0];
-      if ((contagens.get(separador) ?? 0) === 0) {
-        alert(
-          'Não foi possível identificar as colunas do CSV. Use vírgula, ponto e vírgula ou tabulação.'
-        );
-        return;
-      }
 
-      // Lê CSV respeitando aspas e separadores dentro dos campos.
-      const linhas: string[][] = [];
-      let linha: string[] = [];
-      let campo = '';
-      let entreAspas = false;
+        // Detecta o separador fora de campos entre aspas. Aceita CSV com
+        // ponto e vírgula, vírgula ou tabulação, sem confundir valores decimais.
+        const primeiraLinha = conteudo.split('\n')[0];
+        const contagens = new Map<string, number>([
+          [';', 0],
+          [',', 0],
+          ['\t', 0],
+        ]);
+        let aspasCabecalho = false;
+        for (let i = 0; i < primeiraLinha.length; i++) {
+          const caractere = primeiraLinha[i];
+          if (caractere === '"') {
+            if (aspasCabecalho && primeiraLinha[i + 1] === '"') i++;
+            else aspasCabecalho = !aspasCabecalho;
+          } else if (!aspasCabecalho && contagens.has(caractere)) {
+            contagens.set(caractere, (contagens.get(caractere) ?? 0) + 1);
+          }
+        }
+        const separador = [...contagens.entries()].sort(
+          (a, b) => b[1] - a[1]
+        )[0][0];
+        if ((contagens.get(separador) ?? 0) === 0) {
+          alert(
+            'Não foi possível identificar as colunas do CSV. Use vírgula, ponto e vírgula ou tabulação.'
+          );
+          return;
+        }
 
-      for (let i = 0; i < conteudo.length; i++) {
-        const caractere = conteudo[i];
+        // Lê CSV respeitando aspas e separadores dentro dos campos.
 
-        if (caractere === '"') {
-          if (entreAspas && conteudo[i + 1] === '"') {
-            campo += '"';
-            i++;
+        let linha: string[] = [];
+        let campo = '';
+        let entreAspas = false;
+
+        for (let i = 0; i < conteudo.length; i++) {
+          const caractere = conteudo[i];
+
+          if (caractere === '"') {
+            if (entreAspas && conteudo[i + 1] === '"') {
+              campo += '"';
+              i++;
+            } else {
+              entreAspas = !entreAspas;
+            }
+          } else if (caractere === separador && !entreAspas) {
+            linha.push(campo.trim());
+            campo = '';
+          } else if (caractere === '\n' && !entreAspas) {
+            linha.push(campo.trim());
+
+            if (linha.some((valor) => valor.length > 0)) {
+              linhas.push(linha);
+            }
+
+            linha = [];
+            campo = '';
           } else {
-            entreAspas = !entreAspas;
+            campo += caractere;
           }
-        } else if (caractere === separador && !entreAspas) {
-          linha.push(campo.trim());
-          campo = '';
-        } else if (caractere === '\n' && !entreAspas) {
-          linha.push(campo.trim());
+        }
 
-          if (linha.some((valor) => valor.length > 0)) {
-            linhas.push(linha);
-          }
+        if (entreAspas) {
+          alert('CSV inválido: existem aspas sem fechamento.');
+          return;
+        }
 
-          linha = [];
-          campo = '';
-        } else {
-          campo += caractere;
+        linha.push(campo.trim());
+
+        if (linha.some((valor) => valor.length > 0)) {
+          linhas.push(linha);
+        }
+
+        if (linhas.length < 2) {
+          alert('O arquivo CSV não contém lançamentos.');
+          return;
         }
       }
-
-      if (entreAspas) {
-        alert('CSV inválido: existem aspas sem fechamento.');
-        return;
-      }
-
-      linha.push(campo.trim());
-
-      if (linha.some((valor) => valor.length > 0)) {
-        linhas.push(linha);
-      }
-
       if (linhas.length < 2) {
-        alert('O arquivo CSV não contém lançamentos.');
+        alert('O arquivo não contém lançamentos.');
         return;
       }
 
@@ -1147,7 +1269,7 @@ function App() {
           categoria,
           tipo: tipoTexto as 'RECEITA' | 'DESPESA',
           valor,
-          origem: 'CSV',
+          origem: linhasExcel ? 'EXCEL' : 'CSV',
           importadoEm,
           arquivoOrigem: arquivo.name,
           importacaoId,
@@ -3381,52 +3503,92 @@ function App() {
                   marginBottom: '18px',
                 }}
               >
-                Selecione um arquivo CSV para carregar receitas e despesas na
-                PREVANZIA.
+                Selecione um arquivo CSV ou Excel (.xlsx) para carregar receitas
+                e despesas na PREVANZIA.
               </p>
 
-              <label
-                htmlFor="arquivo-csv-prevanzia"
+              {/* Seletor de arquivos com aparência profissional */}
+              <div
                 style={{
-                  display: 'block',
-                  marginBottom: '8px',
-                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  padding: '14px',
+                  border: '1px solid #dce4ef',
+                  borderRadius: '12px',
+                  background: '#f8fafc',
                 }}
               >
-                Arquivo CSV
-              </label>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+                >
+                  <span style={{ fontSize: '26px' }}>📊</span>
+                  <div>
+                    <strong style={{ display: 'block', color: '#17324d' }}>
+                      Excel ou CSV
+                    </strong>
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>
+                      Arquivos de até 5 MB
+                    </span>
+                  </div>
+                </div>
 
-              <input
-                id="arquivo-csv-prevanzia"
-                type="file"
-                accept=".csv,text/csv"
-                onChange={async (evento) => {
-                  const arquivo = evento.target.files?.[0];
+                <label
+                  htmlFor="arquivo-csv-prevanzia"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '11px 18px',
+                    background: '#0f766e',
+                    color: '#ffffff',
+                    borderRadius: '9px',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ↑ Selecionar arquivo
+                </label>
 
-                  if (!arquivo) {
-                    return;
-                  }
+                {/* COLE O CÓDIGO NOVO AQUI — input oculto, mantendo a importação */}
+                <input
+                  id="arquivo-csv-prevanzia"
+                  type="file"
+                  accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={async (evento) => {
+                    const arquivo = evento.target.files?.[0];
 
-                  if (!arquivo.name.toLowerCase().endsWith('.csv')) {
-                    alert('Selecione um arquivo no formato CSV.');
+                    if (!arquivo) {
+                      return;
+                    }
+
+                    if (!/\.(csv|xlsx)$/i.test(arquivo.name)) {
+                      alert('Selecione um arquivo CSV ou Excel (.xlsx).');
+                      evento.target.value = '';
+                      return;
+                    }
+
+                    if (/\.xlsx$/i.test(arquivo.name)) {
+                      await importarArquivoExcel(arquivo);
+                    } else {
+                      await importarArquivoCSV(arquivo);
+                    }
+
                     evento.target.value = '';
-                    return;
-                  }
-
-                  await importarArquivoCSV(arquivo);
-
-                  evento.target.value = '';
-                }}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  padding: '12px',
-                  border: '1px solid #dce4ef',
-                  borderRadius: '10px',
-                  background: '#ffffff',
-                }}
-              />
+                  }}
+                  style={{
+                    position: 'absolute',
+                    width: '1px',
+                    height: '1px',
+                    opacity: 0,
+                    overflow: 'hidden',
+                  }}
+                />
+              </div>
 
               {arquivoPendenteCSV && (
                 <div
@@ -3514,7 +3676,11 @@ function App() {
                           return;
                         }
                         const arquivo = arquivoPendenteCSV;
-                        await importarArquivoCSV(arquivo, mapaCSV);
+                        if (/\.xlsx$/i.test(arquivo.name)) {
+                          await importarArquivoExcel(arquivo, mapaCSV);
+                        } else {
+                          await importarArquivoCSV(arquivo, mapaCSV);
+                        }
                         setArquivoPendenteCSV(null);
                       }}
                       style={{ padding: '10px 16px', cursor: 'pointer' }}
@@ -3530,9 +3696,9 @@ function App() {
                     </button>
                   </div>
                   <p style={{ fontSize: '12px', color: '#64748b' }}>
-                    O arquivo precisa informar o tipo como RECEITA ou DESPESA.
-                    Se não houver alguma dessas informações, cancele a
-                    importação.
+                    O arquivo precisa informar a natureza do movimento (receita
+                    ou despesa). Se não houver alguma dessas informações,
+                    cancele a importação.
                   </p>
                 </div>
               )}
@@ -3547,18 +3713,6 @@ function App() {
               >
                 Colunas necessárias: data, descricao, categoria, tipo e valor.
               </p>
-
-              <p
-                style={{
-                  fontSize: '13px',
-                  color: '#b45309',
-                  marginTop: '8px',
-                  lineHeight: 1.6,
-                }}
-              >
-                Versão de testes: utilize apenas arquivos fictícios. A proteção
-                contra importações duplicadas está ativa.
-              </p>
             </div>
 
             {/* FASE 4 — HISTÓRICO DE IMPORTAÇÕES */}
@@ -3571,7 +3725,9 @@ function App() {
                 marginBottom: '28px',
               }}
             >
-              <h3 style={{ marginTop: 0 }}>Histórico de importações CSV</h3>
+              <h3 style={{ marginTop: 0 }}>
+                Histórico de importações de arquivos
+              </h3>
               <p style={{ color: '#64748b', fontSize: '13px' }}>
                 Arquivos processados nesta conta, inclusive importações sem
                 registros novos. Arquivos anteriores à implantação deste

@@ -246,15 +246,45 @@ function calcularDiagnostico(
     if (despesasAnteriores > 0 && despesas > despesasAnteriores) {
       const aumento =
         ((despesas - despesasAnteriores) / despesasAnteriores) * 100;
+
+      const categoriasAtuais = categoriasComparativas(registros);
+      const categoriasAnteriores = categoriasComparativas(registrosAnteriores);
+
+      const aumentosPorCategoria = [...categoriasAtuais.entries()]
+        .map(([chave, categoria]) => ({
+          nome: categoria.nome,
+          diferenca:
+            categoria.total - (categoriasAnteriores.get(chave)?.total ?? 0),
+        }))
+        .filter((categoria) => categoria.diferenca > 0)
+        .sort((a, b) => b.diferenca - a.diferenca);
+
+      const maiorAumento = aumentosPorCategoria[0];
+
       alertas.push({
         titulo: 'Despesas acima do período anterior',
         nivel: aumento >= 20 ? 'alto' : 'medio',
         descricao: `As despesas registradas aumentaram ${aumento
           .toFixed(1)
-          .replace('.', ',')}% na comparação.`,
+          .replace('.', ',')}% na comparação.${
+          maiorAumento
+            ? ` A categoria "${
+                maiorAumento.nome
+              }" apresentou o maior aumento identificado: ${moeda(
+                maiorAumento.diferenca
+              )}.`
+            : ''
+        }`,
       });
+
       oportunidades.push(
-        'Comparar os gastos por categoria entre os períodos e investigar os aumentos.'
+        maiorAumento
+          ? `Investigar os lançamentos da categoria "${
+              maiorAumento.nome
+            }", que aumentou ${moeda(
+              maiorAumento.diferenca
+            )} em relação ao período anterior.`
+          : 'Comparar os gastos por categoria entre os períodos e investigar os aumentos.'
       );
     }
   }

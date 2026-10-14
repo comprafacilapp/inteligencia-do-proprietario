@@ -277,14 +277,13 @@ function calcularDiagnostico(
         }`,
       });
 
+      // COLE O CÓDIGO NOVO AQUI
       oportunidades.push(
         maiorAumento
-          ? `Investigar os lançamentos da categoria "${
-              maiorAumento.nome
-            }", que aumentou ${moeda(
+          ? `PLANO DE AÇÃO — ${maiorAumento.nome}: os gastos aumentaram ${moeda(
               maiorAumento.diferenca
-            )} em relação ao período anterior.`
-          : 'Comparar os gastos por categoria entre os períodos e investigar os aumentos.'
+            )} em relação ao período anterior. Soluções sugeridas: 1) Revisar os lançamentos que provocaram o aumento; 2) Negociar preços e condições com fornecedores, quando aplicável; 3) Avaliar a redução de desperdícios e despesas dispensáveis, sem prejudicar a operação.`
+          : 'PLANO DE AÇÃO — Despesas em crescimento: 1) Identificar os gastos que aumentaram; 2) Revisar contratos e condições de compra; 3) Avaliar despesas que podem ser reduzidas sem prejudicar a operação.'
       );
     }
   }
@@ -302,12 +301,23 @@ function calcularDiagnostico(
   const maiorGasto = [...gastosPorCategoria.entries()].sort(
     (a, b) => b[1] - a[1]
   )[0];
+  // COLE O CÓDIGO NOVO AQUI
   if (maiorGasto && despesas > 0) {
-    oportunidades.push(
-      `Examinar a categoria de despesa "${
-        maiorGasto[0]
-      }", responsável por ${moeda(maiorGasto[1])} dos gastos registrados.`
+    const categoriaJaRecomendada = oportunidades.some(
+      (texto) =>
+        texto.startsWith('PLANO DE AÇÃO — ') &&
+        texto
+          .toLocaleLowerCase('pt-BR')
+          .includes(maiorGasto[0].toLocaleLowerCase('pt-BR'))
     );
+
+    if (!categoriaJaRecomendada) {
+      oportunidades.push(
+        `Examinar a categoria de despesa "${
+          maiorGasto[0]
+        }", responsável por ${moeda(maiorGasto[1])} dos gastos registrados.`
+      );
+    }
   }
   // Alertas graves aparecem antes dos avisos moderados.
   alertas.sort(

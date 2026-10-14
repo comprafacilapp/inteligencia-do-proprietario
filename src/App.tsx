@@ -280,8 +280,35 @@ function calcularDiagnostico(
 
       const maiorAumento = aumentosPorCategoria[0];
 
+      // COLE O CÓDIGO NOVO AQUI
+      const valoresMaiorAumento = maiorAumento
+        ? {
+            anterior:
+              categoriasAnteriores.get(
+                chaveCategoriaComparativa(maiorAumento.nome)
+              )?.total ?? 0,
+            atual:
+              categoriasAtuais.get(chaveCategoriaComparativa(maiorAumento.nome))
+                ?.total ?? 0,
+          }
+        : null;
+
+      // COLE O CÓDIGO NOVO AQUI
+      const lancamentosParaInvestigar = maiorAumento
+        ? registros
+            .filter(
+              (registro) =>
+                registro.tipo === 'DESPESA' &&
+                chaveCategoriaComparativa(registro.categoria) ===
+                  chaveCategoriaComparativa(maiorAumento.nome)
+            )
+            .sort((a, b) => b.valorCentavos - a.valorCentavos)
+            .slice(0, 3)
+        : [];
+
       alertas.push({
         titulo: 'Despesas acima do período anterior',
+
         nivel: aumento >= 20 ? 'alto' : 'medio',
         descricao: `As despesas registradas aumentaram ${aumento
           .toFixed(1)
@@ -297,11 +324,29 @@ function calcularDiagnostico(
       });
 
       // COLE O CÓDIGO NOVO AQUI
+
+      // COLE O CÓDIGO NOVO AQUI
+
       oportunidades.push(
         maiorAumento
-          ? `PLANO DE AÇÃO — ${maiorAumento.nome}: os gastos aumentaram ${moeda(
-              maiorAumento.diferenca
-            )} em relação ao período anterior. Soluções sugeridas: 1) Revisar os lançamentos que provocaram o aumento; 2) Negociar preços e condições com fornecedores, quando aplicável; 3) Avaliar a redução de desperdícios e despesas dispensáveis, sem prejudicar a operação.`
+          ? `PLANO DE AÇÃO — ${
+              maiorAumento.nome
+            }: no período anterior, os gastos foram ${moeda(
+              valoresMaiorAumento?.anterior ?? 0
+            )}; no período atual, foram ${moeda(
+              valoresMaiorAumento?.atual ?? 0
+            )}. Aumento identificado: ${moeda(maiorAumento.diferenca)}. ${
+              lancamentosParaInvestigar.length > 0
+                ? `Maiores lançamentos do período atual para investigação (não são necessariamente a causa do aumento): ${lancamentosParaInvestigar
+                    .map(
+                      (registro) =>
+                        `${registro.descricao} (${registro.data}): ${moeda(
+                          registro.valorCentavos / 100
+                        )}`
+                    )
+                    .join('; ')}. `
+                : ''
+            }Soluções sugeridas: 1) Revisar os lançamentos apresentados; 2) Negociar preços e condições com fornecedores, quando aplicável; 3) Avaliar a redução de desperdícios e despesas dispensáveis, sem prejudicar a operação.`
           : 'PLANO DE AÇÃO — Despesas em crescimento: 1) Identificar os gastos que aumentaram; 2) Revisar contratos e condições de compra; 3) Avaliar despesas que podem ser reduzidas sem prejudicar a operação.'
       );
     }

@@ -699,19 +699,34 @@ function App() {
   }, [historicoImportacoes, usuarioAtual, uidHistoricoCarregado]);
 
   // Mapeamento provisório: nenhum lançamento é salvo antes da confirmação.
-  const camposCSV = ['data', 'descricao', 'categoria', 'tipo', 'valor'] as const;
+  const camposCSV = [
+    'data',
+    'descricao',
+    'categoria',
+    'tipo',
+    'valor',
+  ] as const;
   type CampoCSV = (typeof camposCSV)[number];
-  const [arquivoPendenteCSV, setArquivoPendenteCSV] = useState<File | null>(null);
+  const [arquivoPendenteCSV, setArquivoPendenteCSV] = useState<File | null>(
+    null
+  );
   const [colunasPendentesCSV, setColunasPendentesCSV] = useState<string[]>([]);
   const [mapaCSV, setMapaCSV] = useState<Record<CampoCSV, string>>({
-    data: '', descricao: '', categoria: '', tipo: '', valor: '',
+    data: '',
+    descricao: '',
+    categoria: '',
+    tipo: '',
+    valor: '',
   });
 
   // FASE 4 — IMPORTAÇÃO DE DADOS FINANCEIROS POR CSV
 
   // FASE 4 — IMPORTAÇÃO CSV COM VALIDAÇÃO E PROTEÇÃO CONTRA DUPLICAÇÃO
 
-  async function importarArquivoCSV(arquivo: File, mapaConfirmado?: Record<CampoCSV, string>) {
+  async function importarArquivoCSV(
+    arquivo: File,
+    mapaConfirmado?: Record<CampoCSV, string>
+  ) {
     if (
       !usuarioAtual ||
       uidHistoricoCarregado !== usuarioAtual.uid ||
@@ -808,18 +823,39 @@ function App() {
           .replace(/[\u0300-\u036f]/g, '')
           .replace(/[\s_-]+/g, '');
 
-      const nomesAceitos: Record<string, string[]> = {
-        data: ['data', 'datalancamento', 'datamovimento', 'date'],
-        descricao: [
-          'descricao',
-          'historico',
-          'detalhes',
-          'description',
-          'observacao',
+      // Equivalências explícitas e conservadoras. Cabeçalhos que possam
+      // significar mais de um campo continuam exigindo confirmação manual.
+      const nomesAceitos: Record<CampoCSV, string[]> = {
+        data: [
+          'data', 'datalancamento', 'datamovimento', 'date',
+          'datadaoperacao', 'datatransacao',
+          'datadatransacao', 'datadomovimento', 'datadoregistro',
+          'datacompetencia', 'dataregistro', 'dtmovimento',
         ],
-        categoria: ['categoria', 'grupo', 'category'],
-        tipo: ['tipo', 'natureza', 'tipomovimento', 'type'],
-        valor: ['valor', 'valorbruto', 'amount', 'quantia'],
+        descricao: [
+          'descricao', 'historico', 'detalhes', 'description',
+          'observacao', 'descricaodomovimento', 'descricaodaoperacao',
+          'descricaodatransacao', 'historicolancamento',
+          'historicodomovimento', 'detalhesdomovimento',
+          'nomedomovimento', 'discriminacao',
+        ],
+        categoria: [
+          'categoria', 'grupo', 'category', 'grupofinanceiro',
+          'categoriafinanceira', 'categoriadolancamento',
+          'categoriadomovimento', 'grupodecontas',
+        ],
+        tipo: [
+          'tipo', 'natureza', 'tipomovimento', 'type',
+          'naturezadaoperacao', 'naturezadomovimento',
+          'tipodelancamento', 'tipodetransacao',
+          'tipodaoperacao', 'tipodomovimento',
+        ],
+        valor: [
+          'valor', 'valorbruto', 'amount', 'quantia',
+          'valoremreais', 'valordomovimento', 'valordaoperacao',
+          'valordatransacao', 'valordolancamento',
+          'valortotal', 'montante', 'montantetotal',
+        ],
       };
 
       const cabecalhoOriginal = linhas[0].map(normalizarCabecalho);
@@ -839,12 +875,21 @@ function App() {
       if (mapaConfirmado) {
         for (const campoObrigatorio of camposCSV) {
           const posicao = Number(mapaConfirmado[campoObrigatorio]);
-          if (!Number.isInteger(posicao) || posicao < 0 || posicao >= cabecalho.length) {
-            alert('Confira as cinco informações necessárias antes de importar.');
+          if (
+            !Number.isInteger(posicao) ||
+            posicao < 0 ||
+            posicao >= cabecalho.length
+          ) {
+            alert(
+              'Confira as cinco informações necessárias antes de importar.'
+            );
             return;
           }
         }
-        if (new Set(camposCSV.map((campo) => mapaConfirmado[campo])).size !== camposCSV.length) {
+        if (
+          new Set(camposCSV.map((campo) => mapaConfirmado[campo])).size !==
+          camposCSV.length
+        ) {
           alert('Cada informação precisa utilizar uma coluna diferente.');
           return;
         }
@@ -853,11 +898,12 @@ function App() {
           cabecalho[posicao] = `coluna_nao_usada_${posicao}`;
         }
         for (const campoObrigatorio of camposCSV) {
-          cabecalho[Number(mapaConfirmado[campoObrigatorio])] = campoObrigatorio;
+          cabecalho[Number(mapaConfirmado[campoObrigatorio])] =
+            campoObrigatorio;
         }
       } else {
-        const faltantes = camposCSV.filter((campo) =>
-          cabecalho.filter((nome) => nome === campo).length !== 1
+        const faltantes = camposCSV.filter(
+          (campo) => cabecalho.filter((nome) => nome === campo).length !== 1
         );
         if (faltantes.length > 0) {
           const sugestoes = {} as Record<CampoCSV, string>;
@@ -875,7 +921,9 @@ function App() {
       const obrigatorios = [...camposCSV];
       if (
         !obrigatorios.every((nome) => cabecalho.includes(nome)) ||
-        obrigatorios.some((nome) => cabecalho.filter((coluna) => coluna === nome).length !== 1)
+        obrigatorios.some(
+          (nome) => cabecalho.filter((coluna) => coluna === nome).length !== 1
+        )
       ) {
         alert('Não foi possível identificar as colunas. Confira o mapeamento.');
         return;
@@ -3275,46 +3323,110 @@ function App() {
               />
 
               {arquivoPendenteCSV && (
-                <div style={{ marginTop: '18px', padding: '16px', border: '1px solid #94a3b8', borderRadius: '12px', background: '#fff' }}>
+                <div
+                  style={{
+                    marginTop: '18px',
+                    padding: '16px',
+                    border: '1px solid #94a3b8',
+                    borderRadius: '12px',
+                    background: '#fff',
+                  }}
+                >
                   <strong>Confirme as informações do arquivo</strong>
                   <p style={{ lineHeight: 1.5 }}>
-                    Não reconhecemos todas as colunas de {arquivoPendenteCSV.name}.
-                    Selecione onde está cada informação. Nada será importado antes da confirmação.
+                    Não reconhecemos todas as colunas de{' '}
+                    {arquivoPendenteCSV.name}. Selecione onde está cada
+                    informação. Nada será importado antes da confirmação.
                   </p>
                   {camposCSV.map((campo) => (
-                    <label key={campo} style={{ display: 'block', marginTop: '12px' }}>
-                      <span style={{ display: 'block', marginBottom: '4px', textTransform: 'capitalize' }}>{campo === 'descricao' ? 'Descrição' : campo === 'categoria' ? 'Categoria' : campo === 'valor' ? 'Valor' : campo === 'data' ? 'Data' : 'Tipo (receita/despesa)'}</span>
+                    <label
+                      key={campo}
+                      style={{ display: 'block', marginTop: '12px' }}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          marginBottom: '4px',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {campo === 'descricao'
+                          ? 'Descrição'
+                          : campo === 'categoria'
+                          ? 'Categoria'
+                          : campo === 'valor'
+                          ? 'Valor'
+                          : campo === 'data'
+                          ? 'Data'
+                          : 'Tipo (receita/despesa)'}
+                      </span>
                       <select
                         value={mapaCSV[campo]}
-                        onChange={(evento) => setMapaCSV((anterior) => ({ ...anterior, [campo]: evento.target.value }))}
-                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                        onChange={(evento) =>
+                          setMapaCSV((anterior) => ({
+                            ...anterior,
+                            [campo]: evento.target.value,
+                          }))
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                        }}
                       >
                         <option value="">Escolha a coluna</option>
                         {colunasPendentesCSV.map((coluna, posicao) => (
-                          <option key={posicao} value={String(posicao)}>{coluna || `Coluna ${posicao + 1}`}</option>
+                          <option key={posicao} value={String(posicao)}>
+                            {coluna || `Coluna ${posicao + 1}`}
+                          </option>
                         ))}
                       </select>
                     </label>
                   ))}
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap' }}>
-                    <button type="button" onClick={async () => {
-                      const posicoes = camposCSV.map((campo) => mapaCSV[campo]);
-                      if (posicoes.some((posicao) => posicao === '') || new Set(posicoes).size !== 5) {
-                        alert('Selecione cinco colunas diferentes para continuar.');
-                        return;
-                      }
-                      const arquivo = arquivoPendenteCSV;
-                      await importarArquivoCSV(arquivo, mapaCSV);
-                      setArquivoPendenteCSV(null);
-                    }} style={{ padding: '10px 16px', cursor: 'pointer' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '10px',
+                      marginTop: '16px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const posicoes = camposCSV.map(
+                          (campo) => mapaCSV[campo]
+                        );
+                        if (
+                          posicoes.some((posicao) => posicao === '') ||
+                          new Set(posicoes).size !== 5
+                        ) {
+                          alert(
+                            'Selecione cinco colunas diferentes para continuar.'
+                          );
+                          return;
+                        }
+                        const arquivo = arquivoPendenteCSV;
+                        await importarArquivoCSV(arquivo, mapaCSV);
+                        setArquivoPendenteCSV(null);
+                      }}
+                      style={{ padding: '10px 16px', cursor: 'pointer' }}
+                    >
                       Confirmar e importar
                     </button>
-                    <button type="button" onClick={() => setArquivoPendenteCSV(null)} style={{ padding: '10px 16px', cursor: 'pointer' }}>
+                    <button
+                      type="button"
+                      onClick={() => setArquivoPendenteCSV(null)}
+                      style={{ padding: '10px 16px', cursor: 'pointer' }}
+                    >
                       Cancelar
                     </button>
                   </div>
                   <p style={{ fontSize: '12px', color: '#64748b' }}>
-                    O arquivo precisa informar o tipo como RECEITA ou DESPESA. Se não houver alguma dessas informações, cancele a importação.
+                    O arquivo precisa informar o tipo como RECEITA ou DESPESA.
+                    Se não houver alguma dessas informações, cancele a
+                    importação.
                   </p>
                 </div>
               )}

@@ -141,6 +141,19 @@ type DiagnosticoCalculado = {
   recomendacao: string;
 };
 
+// SIMULAÇÃO DE IMPACTO — CENÁRIOS HIPOTÉTICOS
+function simularEconomia(valor: number, percentual: number): number {
+  return Math.round(valor * percentual) / 100;
+}
+
+// COLE O CÓDIGO NOVO AQUI
+function calcularCenariosEconomia(valor: number) {
+  return [5, 10, 15].map((percentual) => ({
+    percentual,
+    economia: simularEconomia(valor, percentual),
+  }));
+}
+
 function calcularDiagnostico(
   registros: RegistroFinanceiroUniversal[],
   registrosAnteriores: RegistroFinanceiroUniversal[],
@@ -2731,6 +2744,37 @@ function App() {
                 </article>
               ))
             )}
+
+            {diagnostico.despesas > 0 && (
+              <div className="recomendacao">
+                <div>
+                  <p className="sobretitulo">SIMULAÇÃO DE IMPACTO</p>
+
+                  <h2>Quanto a empresa poderia economizar?</h2>
+
+                  <p>
+                    Cenários hipotéticos de redução sobre as despesas
+                    registradas no período:
+                  </p>
+
+                  {calcularCenariosEconomia(diagnostico.despesas).map(
+                    (cenario) => (
+                      <p key={cenario.percentual}>
+                        <strong>{cenario.percentual}% de redução:</strong>{' '}
+                        {formatarValorFinanceiro(cenario.economia)}
+                      </p>
+                    )
+                  )}
+
+                  <p>
+                    Estes valores são simulações matemáticas, não economias
+                    garantidas. A viabilidade depende das despesas que realmente
+                    podem ser reduzidas.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="recomendacao">
               <div>
                 <p className="sobretitulo">ORIENTAÇÃO INICIAL</p>

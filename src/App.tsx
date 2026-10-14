@@ -756,13 +756,33 @@ function App() {
         return;
       }
 
+      // Detecta o separador fora de campos entre aspas. Aceita CSV com
+      // ponto e vírgula, vírgula ou tabulação, sem confundir valores decimais.
       const primeiraLinha = conteudo.split('\n')[0];
-
-      const separador =
-        (primeiraLinha.match(/;/g) || []).length >=
-        (primeiraLinha.match(/,/g) || []).length
-          ? ';'
-          : ',';
+      const contagens = new Map<string, number>([
+        [';', 0],
+        [',', 0],
+        ['\t', 0],
+      ]);
+      let aspasCabecalho = false;
+      for (let i = 0; i < primeiraLinha.length; i++) {
+        const caractere = primeiraLinha[i];
+        if (caractere === '"') {
+          if (aspasCabecalho && primeiraLinha[i + 1] === '"') i++;
+          else aspasCabecalho = !aspasCabecalho;
+        } else if (!aspasCabecalho && contagens.has(caractere)) {
+          contagens.set(caractere, (contagens.get(caractere) ?? 0) + 1);
+        }
+      }
+      const separador = [...contagens.entries()].sort(
+        (a, b) => b[1] - a[1]
+      )[0][0];
+      if ((contagens.get(separador) ?? 0) === 0) {
+        alert(
+          'Não foi possível identificar as colunas do CSV. Use vírgula, ponto e vírgula ou tabulação.'
+        );
+        return;
+      }
 
       // Lê CSV respeitando aspas e separadores dentro dos campos.
       const linhas: string[][] = [];
@@ -821,40 +841,94 @@ function App() {
           .toLowerCase()
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
-          .replace(/[\s_-]+/g, '');
+          .replace(/[^a-z0-9]/g, '');
 
       // Equivalências explícitas e conservadoras. Cabeçalhos que possam
       // significar mais de um campo continuam exigindo confirmação manual.
       const nomesAceitos: Record<CampoCSV, string[]> = {
         data: [
-          'data', 'datalancamento', 'datamovimento', 'date',
-          'datadaoperacao', 'datatransacao',
-          'datadatransacao', 'datadomovimento', 'datadoregistro',
-          'datacompetencia', 'dataregistro', 'dtmovimento',
+          'data',
+          'datalancamento',
+          'datamovimento',
+          'date',
+          'datapagamento',
+          'datarecebimento',
+          'dataemissao',
+          'dataefetivacao',
+          'datadaoperacao',
+          'datatransacao',
+          'datadatransacao',
+          'datadomovimento',
+          'datadoregistro',
+          'datacompetencia',
+          'dataregistro',
+          'dtmovimento',
         ],
         descricao: [
-          'descricao', 'historico', 'detalhes', 'description',
-          'observacao', 'descricaodomovimento', 'descricaodaoperacao',
-          'descricaodatransacao', 'historicolancamento',
-          'historicodomovimento', 'detalhesdomovimento',
-          'nomedomovimento', 'discriminacao',
+          'descricao',
+          'historico',
+          'detalhes',
+          'description',
+          'observacao',
+          'descricaodomovimento',
+          'descricaodaoperacao',
+          'descricaodatransacao',
+          'historicolancamento',
+          'historicodomovimento',
+          'detalhesdomovimento',
+          'nomedomovimento',
+          'discriminacao',
+          'memo',
+          'narrativa',
+          'complemento',
+          'historicooperacao',
+          'descricaooperacao',
         ],
         categoria: [
-          'categoria', 'grupo', 'category', 'grupofinanceiro',
-          'categoriafinanceira', 'categoriadolancamento',
-          'categoriadomovimento', 'grupodecontas',
+          'categoria',
+          'grupo',
+          'category',
+          'grupofinanceiro',
+          'categoriafinanceira',
+          'categoriadolancamento',
+          'categoriadomovimento',
+          'grupodecontas',
+          'classificacao',
+          'planodecontas',
+          'centrodecusto',
         ],
         tipo: [
-          'tipo', 'natureza', 'tipomovimento', 'type',
-          'naturezadaoperacao', 'naturezadomovimento',
-          'tipodelancamento', 'tipodetransacao',
-          'tipodaoperacao', 'tipodomovimento',
+          'tipo',
+          'natureza',
+          'tipomovimento',
+          'type',
+          'naturezadaoperacao',
+          'naturezadomovimento',
+          'tipodelancamento',
+          'tipodetransacao',
+          'tipodaoperacao',
+          'tipodomovimento',
+          'entradaousaida',
+          'receitaoudespesa',
+          'creditooudebito',
         ],
         valor: [
-          'valor', 'valorbruto', 'amount', 'quantia',
-          'valoremreais', 'valordomovimento', 'valordaoperacao',
-          'valordatransacao', 'valordolancamento',
-          'valortotal', 'montante', 'montantetotal',
+          'valor',
+          'valorbruto',
+          'amount',
+          'quantia',
+          'valoremreais',
+          'valordomovimento',
+          'valordaoperacao',
+          'valordatransacao',
+          'valordolancamento',
+          'valortotal',
+          'montante',
+          'montantetotal',
+          'valorliquido',
+          'valorpago',
+          'valorrecebido',
+          'valorbrl',
         ],
       };
 
@@ -972,14 +1046,43 @@ function App() {
         const dataTexto = colunas[indice('data')].trim();
         const descricao = colunas[indice('descricao')].trim();
         const categoria = colunas[indice('categoria')].trim();
-        const tipoTexto = colunas[indice('tipo')].trim().toUpperCase();
+        const tipoOriginal = colunas[indice('tipo')]
+          .trim()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase();
+        // Somente equivalências inequívocas: nunca adivinhar a natureza
+        // de um lançamento a partir de um valor ou descrição.
+        const tiposReceita = [
+          'RECEITA',
+          'ENTRADA',
+          'CREDITO',
+          'CREDIT',
+          'INCOME',
+          'R',
+        ];
+        const tiposDespesa = [
+          'DESPESA',
+          'SAIDA',
+          'DEBITO',
+          'DEBIT',
+          'EXPENSE',
+          'D',
+        ];
+        const tipoTexto = tiposReceita.includes(tipoOriginal)
+          ? 'RECEITA'
+          : tiposDespesa.includes(tipoOriginal)
+          ? 'DESPESA'
+          : '';
         const valorTexto = colunas[indice('valor')].trim();
 
         // FASE 4 — DATAS BRASILEIRAS E INTERNACIONAIS
 
         let data = dataTexto;
 
-        const dataBrasileira = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dataTexto);
+        const dataBrasileira = /^(\d{2})[\/-](\d{2})[\/-](\d{4})$/.exec(
+          dataTexto
+        );
 
         if (dataBrasileira) {
           const [, dia, mes, ano] = dataBrasileira;
@@ -998,20 +1101,23 @@ function App() {
 
         // FASE 4 — VALORES BRASILEIROS E INTERNACIONAIS
 
-        let valorNormalizado = valorTexto;
+        // Aceita moeda explícita e espaços, sem aceitar sinais negativos:
+        // a natureza (receita/despesa) precisa vir da coluna tipo.
+        const valorLimpo = valorTexto.replace(/^R\$\s*/i, '').trim();
+        let valorNormalizado = valorLimpo;
         let formatoValorValido = false;
 
-        if (/^\d{1,3}(?:\.\d{3})+,\d{1,2}$/.test(valorTexto)) {
+        if (/^\d{1,3}(?:\.\d{3})+,\d{1,2}$/.test(valorLimpo)) {
           // Exemplo: 1.500,50
-          valorNormalizado = valorTexto.replace(/\./g, '').replace(',', '.');
+          valorNormalizado = valorLimpo.replace(/\./g, '').replace(',', '.');
           formatoValorValido = true;
-        } else if (/^\d{1,3}(?:,\d{3})+\.\d{1,2}$/.test(valorTexto)) {
+        } else if (/^\d{1,3}(?:,\d{3})+\.\d{1,2}$/.test(valorLimpo)) {
           // Exemplo: 1,500.50
-          valorNormalizado = valorTexto.replace(/,/g, '');
+          valorNormalizado = valorLimpo.replace(/,/g, '');
           formatoValorValido = true;
-        } else if (/^\d+(?:[.,]\d{1,2})?$/.test(valorTexto)) {
+        } else if (/^\d+(?:[.,]\d{1,2})?$/.test(valorLimpo)) {
           // Exemplos: 1500,50 / 1500.50 / 1500
-          valorNormalizado = valorTexto.replace(',', '.');
+          valorNormalizado = valorLimpo.replace(',', '.');
           formatoValorValido = true;
         }
 

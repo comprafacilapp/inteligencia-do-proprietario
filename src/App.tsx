@@ -307,16 +307,23 @@ function calcularDiagnostico(
     }
   }
 
+  // CATEGORIAS — PADRONIZAÇÃO PARA O DIAGNÓSTICO
   const gastosPorCategoria = new Map<string, number>();
+
   for (const registro of registros) {
     if (registro.tipo === 'DESPESA') {
+      const chave = chaveCategoriaComparativa(registro.categoria);
+      if (!chave) continue;
+
       gastosPorCategoria.set(
-        registro.categoria,
-        (gastosPorCategoria.get(registro.categoria) ?? 0) +
-          registro.valorCentavos / 100
+        chave,
+        (gastosPorCategoria.get(chave) ?? 0) + registro.valorCentavos / 100
       );
     }
   }
+
+  // COLE O CÓDIGO NOVO AQUI
+
   const maiorGasto = [...gastosPorCategoria.entries()].sort(
     (a, b) => b[1] - a[1]
   )[0];

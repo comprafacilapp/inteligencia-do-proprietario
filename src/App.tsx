@@ -139,6 +139,12 @@ type DiagnosticoCalculado = {
   oportunidades: string[];
   resumo: string;
   recomendacao: string;
+
+  // COLE O CÓDIGO NOVO AQUI
+  maiorCategoriaDespesa?: {
+    nome: string;
+    valor: number;
+  };
 };
 
 // SIMULAÇÃO DE IMPACTO — CENÁRIOS HIPOTÉTICOS
@@ -348,6 +354,15 @@ function calcularDiagnostico(
     resultado,
     percentualDespesas,
     quantidade: registros.length,
+
+    // COLE O CÓDIGO NOVO AQUI
+    maiorCategoriaDespesa: maiorGasto
+      ? {
+          nome: maiorGasto[0],
+          valor: maiorGasto[1],
+        }
+      : undefined,
+
     alertas,
     oportunidades: [...new Set(oportunidades)].slice(0, 5),
     resumo:
@@ -2764,6 +2779,38 @@ function App() {
                         {formatarValorFinanceiro(cenario.economia)}
                       </p>
                     )
+                  )}
+
+                  {diagnostico.maiorCategoriaDespesa && (
+                    <div>
+                      <h3>Simulação por categoria de despesa</h3>
+
+                      <p>
+                        <strong>Categoria:</strong>{' '}
+                        {diagnostico.maiorCategoriaDespesa.nome}
+                      </p>
+
+                      <p>
+                        <strong>Valor registrado:</strong>{' '}
+                        {formatarValorFinanceiro(
+                          diagnostico.maiorCategoriaDespesa.valor
+                        )}
+                      </p>
+
+                      {calcularCenariosEconomia(
+                        diagnostico.maiorCategoriaDespesa.valor
+                      ).map((cenario) => (
+                        <p key={cenario.percentual}>
+                          <strong>{cenario.percentual}% de redução:</strong>{' '}
+                          {formatarValorFinanceiro(cenario.economia)}
+                        </p>
+                      ))}
+
+                      <p>
+                        Simulação hipotética aplicada somente à categoria
+                        apresentada. Não representa economia garantida.
+                      </p>
+                    </div>
                   )}
 
                   <p>

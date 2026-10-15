@@ -4185,7 +4185,9 @@ function App() {
                 registros novos. Arquivos anteriores à implantação deste
                 histórico não aparecem aqui.
               </p>
-              {historicoImportacoes.length === 0 ? (
+              {historicoImportacoes.filter(
+                (item) => item.empresaId === empresaIdAtual
+              ).length === 0 ? (
                 <p className="subtitulo">
                   Nenhuma importação registrada ainda.
                 </p>
@@ -4194,7 +4196,7 @@ function App() {
                   style={{ display: 'grid', gap: '12px', marginTop: '16px' }}
                 >
                   {historicoImportacoes
-                    .filter((item) => item.empresaId === 'empresa_demo')
+                    .filter((item) => item.empresaId === empresaIdAtual)
                     .map((item) => (
                       <article
                         key={item.id}

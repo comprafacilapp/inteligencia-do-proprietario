@@ -3,7 +3,14 @@ import './App.css';
 import { signOut, onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from './firebase';
 import { db } from './firebase';
-import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  setDoc,
+  query,
+  where,
+} from 'firebase/firestore';
 
 type LancamentoFinanceiro = {
   id: string;
@@ -550,7 +557,91 @@ function App() {
   );
   // Identificação provisória da empresa.
   // Mantém compatibilidade com os lançamentos existentes.
-  const empresaIdAtual = 'empresa_demo';
+  // COLE O CÓDIGO NOVO AQUI
+  const [empresaSelecionadaId, setEmpresaSelecionadaId] = useState<
+    string | null
+  >(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return null;
+
+    return localStorage.getItem(`prevanzia_empresa_selecionada_${uid}`);
+  });
+  // Recupera a empresa selecionada após a autenticação.
+  useEffect(() => {
+    if (!usuarioAtual) {
+      setEmpresaSelecionadaId(null);
+      return;
+    }
+
+    const idSalvo = localStorage.getItem(
+      `prevanzia_empresa_selecionada_${usuarioAtual.uid}`
+    );
+
+    setEmpresaSelecionadaId(idSalvo);
+  }, [usuarioAtual]);
+  const [empresasCadastradas, setEmpresasCadastradas] = useState<
+    EmpresaPrevanzia[]
+  >([]);
+  const empresaIdAtual = empresasCadastradas.some(
+    (empresa) =>
+      empresa.id === empresaSelecionadaId &&
+      empresa.proprietarioUid === usuarioAtual?.uid
+  )
+    ? empresaSelecionadaId!
+    : 'empresa_demo';
+  const [nomeEmpresa, setNomeEmpresa] = useState('');
+  const [documentoEmpresa, setDocumentoEmpresa] = useState('');
+
+  // COLE O CÓDIGO NOVO AQUI
+
+  // PREVANZIA — Leitura das empresas do proprietário
+  useEffect(() => {
+    if (!usuarioAtual) {
+      setEmpresasCadastradas([]);
+      return;
+    }
+
+    const consultaEmpresas = query(
+      collection(db, 'empresas'),
+      where('proprietarioUid', '==', usuarioAtual.uid)
+    );
+
+    const cancelarEmpresas = onSnapshot(
+      consultaEmpresas,
+      (resultado) => {
+        const empresas = resultado.docs.map(
+          (documento) => documento.data() as EmpresaPrevanzia
+        );
+
+        setEmpresasCadastradas(empresas);
+        // COLE O CÓDIGO NOVO AQUI
+        setEmpresaSelecionadaId((idAtual) => {
+          if (!idAtual) return null;
+
+          const autorizada = empresas.some(
+            (empresa) =>
+              empresa.id === idAtual &&
+              empresa.proprietarioUid === usuarioAtual.uid
+          );
+
+          if (!autorizada) {
+            localStorage.removeItem(
+              `prevanzia_empresa_selecionada_${usuarioAtual.uid}`
+            );
+            return null;
+          }
+
+          return idAtual;
+        });
+      },
+      (erro) => {
+        console.error('Erro ao carregar empresas:', erro);
+      }
+    );
+
+    return () => cancelarEmpresas();
+  }, [usuarioAtual]);
+
   useEffect(() => {
     const cancelar = onAuthStateChanged(auth, (usuario) => {
       setLancamentosCarregados(false);
@@ -2159,6 +2250,7 @@ function App() {
     'Decisões',
     'Resultados',
     'Dados financeiros',
+    'Empresas',
   ];
 
   return (
@@ -3580,6 +3672,164 @@ function App() {
           </section>
         )}
 
+        {/* CADASTRO DE EMPRESAS — PREVANZIA */}
+        {secao === 'Empresas' && (
+          <section className="painel">
+            <div className="painel-cabecalho">
+              <div>
+                <p className="sobretitulo">ESTRUTURA EMPRESARIAL</p>
+                <h2>Cadastrar empresa</h2>
+              </div>
+            </div>
+
+            <p className="subtitulo">
+              Identifique a empresa que será acompanhada pelo PREVANZIA.
+            </p>
+
+            {/* COLE O CÓDIGO NOVO AQUI */}
+            <div style={{ display: 'grid', gap: '18px', marginTop: '20px' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  width: '100%',
+                }}
+              >
+                <strong>Nome da empresa (obrigatório)</strong>
+                <input
+                  type="text"
+                  value={nomeEmpresa}
+                  onChange={(e) => setNomeEmpresa(e.target.value)}
+                  placeholder="Digite o nome da empresa"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                  }}
+                />
+              </label>
+
+              <label
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  width: '100%',
+                }}
+              >
+                <strong>CPF ou CNPJ (opcional)</strong>
+                <input
+                  type="text"
+                  value={documentoEmpresa}
+                  onChange={(e) => setDocumentoEmpresa(e.target.value)}
+                  placeholder="Digite o CPF ou CNPJ"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                  }}
+                />
+              </label>
+            </div>
+
+            {/* COLE O CÓDIGO NOVO AQUI */}
+            <button
+              type="button"
+              disabled={!nomeEmpresa.trim() || !usuarioAtual}
+              onClick={async () => {
+                if (!usuarioAtual || !nomeEmpresa.trim()) return;
+
+                const id = crypto.randomUUID();
+
+                const empresa: EmpresaPrevanzia = {
+                  id,
+                  nome: nomeEmpresa.trim(),
+                  ...(documentoEmpresa.trim()
+                    ? { documento: documentoEmpresa.trim() }
+                    : {}),
+                  proprietarioUid: usuarioAtual.uid,
+                  criadaEm: new Date().toISOString(),
+                };
+
+                try {
+                  await setDoc(doc(db, 'empresas', id), empresa);
+                  alert('Empresa cadastrada com sucesso!');
+                  setNomeEmpresa('');
+                  setDocumentoEmpresa('');
+                } catch (erro) {
+                  console.error('Erro ao cadastrar empresa:', erro);
+                  alert('Não foi possível cadastrar a empresa.');
+                }
+              }}
+              style={{
+                marginTop: '20px',
+                padding: '12px 20px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+              }}
+            >
+              Cadastrar empresa
+            </button>
+            {/* LISTAGEM DAS EMPRESAS CADASTRADAS */}
+            <div style={{ marginTop: '28px' }}>
+              <h3>Minhas empresas</h3>
+
+              {empresasCadastradas.length === 0 ? (
+                <p className="subtitulo">
+                  Nenhuma empresa cadastrada encontrada.
+                </p>
+              ) : (
+                <div style={{ display: 'grid', gap: '12px' }}>
+                  {empresasCadastradas.map((empresa) => (
+                    <div
+                      key={empresa.id}
+                      style={{
+                        padding: '16px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '10px',
+                      }}
+                    >
+                      <strong>{empresa.nome}</strong>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!usuarioAtual) return;
+
+                          setEmpresaSelecionadaId(empresa.id);
+
+                          localStorage.setItem(
+                            `prevanzia_empresa_selecionada_${usuarioAtual.uid}`,
+                            empresa.id
+                          );
+                        }}
+                        style={{
+                          display: 'block',
+                          marginTop: '12px',
+                          padding: '8px 14px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {empresaSelecionadaId === empresa.id
+                          ? 'Empresa selecionada'
+                          : 'Selecionar empresa'}
+                      </button>
+                      {empresa.documento && (
+                        <p>CPF/CNPJ: {empresa.documento}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
         {secao === 'Dados financeiros' && (
           <section className="painel">
             <div className="painel-cabecalho">
@@ -3588,7 +3838,7 @@ function App() {
                 <h2>Lançamentos financeiros</h2>
               </div>
               <span className="contador">
-                {lancamentosFinanceiros.length} lançamentos
+                {lancamentosEmpresa.length} lançamentos
               </span>
             </div>
 
@@ -3992,7 +4242,7 @@ function App() {
 
                 const novoLancamento: LancamentoFinanceiro = {
                   id: crypto.randomUUID(),
-                  empresaId: 'empresa_demo',
+                  empresaId: empresaIdAtual,
                   data: dataLancamento,
                   descricao,
                   categoria,
@@ -4138,13 +4388,13 @@ function App() {
 
             <h3>Histórico financeiro</h3>
 
-            {lancamentosFinanceiros.length === 0 ? (
+            {lancamentosEmpresa.length === 0 ? (
               <p className="subtitulo">
                 Nenhum lançamento financeiro cadastrado.
               </p>
             ) : (
               <div style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
-                {lancamentosFinanceiros.map((lancamento) => (
+                {lancamentosEmpresa.map((lancamento) => (
                   <article
                     key={`${lancamento.empresaId}-${lancamento.id}`}
                     style={{

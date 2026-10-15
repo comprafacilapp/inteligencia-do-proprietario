@@ -80,6 +80,21 @@ type DadosUniversaisEmpresa = {
   atualizadoEm: string;
 };
 
+// ESTRUTURA EMPRESARIAL — PREVANZIA
+export type EmpresaPrevanzia = {
+  id: string;
+  nome: string;
+  documento?: string;
+  proprietarioUid: string;
+  criadaEm: string;
+};
+export type AcessoEmpresaPrevanzia = {
+  empresaId: string;
+  usuarioUid: string;
+  perfil: 'PROPRIETARIO' | 'CONFIANCA';
+  ativo: boolean;
+};
+
 // FASE 3 — VALIDAÇÃO DOS REGISTROS FINANCEIROS UNIVERSAIS
 
 function validarRegistroFinanceiroUniversal(
@@ -533,6 +548,9 @@ function App() {
   const [usuarioAtual, setUsuarioAtual] = useState<User | null>(
     () => auth.currentUser
   );
+  // Identificação provisória da empresa.
+  // Mantém compatibilidade com os lançamentos existentes.
+  const empresaIdAtual = 'empresa_demo';
   useEffect(() => {
     const cancelar = onAuthStateChanged(auth, (usuario) => {
       setLancamentosCarregados(false);
@@ -1383,7 +1401,7 @@ function App() {
 
         const registro: LancamentoFinanceiro = {
           id: crypto.randomUUID(),
-          empresaId: 'empresa_demo',
+          empresaId: empresaIdAtual,
           data,
           descricao,
           categoria,
@@ -1409,7 +1427,8 @@ function App() {
       // Registra também tentativas válidas em que todos os itens eram duplicados.
       const eventoImportacao: HistoricoImportacao = {
         id: importacaoId,
-        empresaId: 'empresa_demo',
+        // COLE O CÓDIGO NOVO AQUI
+        empresaId: empresaIdAtual,
         nomeArquivo: arquivo.name,
         importadoEm,
         novos: novosLancamentos.length,
@@ -1455,7 +1474,7 @@ function App() {
   // MARCO 11 — RESUMO FINANCEIRO AUTOMÁTICO
 
   const lancamentosEmpresa = lancamentosFinanceiros.filter(
-    (lancamento) => lancamento.empresaId === 'empresa_demo'
+    (lancamento) => lancamento.empresaId === empresaIdAtual
   );
 
   // FASE 3 — CONVERSÃO PARA O MODELO UNIVERSAL
@@ -1487,7 +1506,7 @@ function App() {
   );
 
   const dadosUniversaisEmpresa: DadosUniversaisEmpresa = {
-    empresaId: 'empresa_demo',
+    empresaId: empresaIdAtual,
     registrosFinanceiros: registrosFinanceirosValidos,
     clientes: [],
     servicos: [],

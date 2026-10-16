@@ -6,6 +6,7 @@ import { db } from './firebase';
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   setDoc,
   query,
@@ -168,19 +169,6 @@ type DiagnosticoCalculado = {
     valor: number;
   };
 };
-
-// SIMULAÇÃO DE IMPACTO — CENÁRIOS HIPOTÉTICOS
-function simularEconomia(valor: number, percentual: number): number {
-  return Math.round(valor * percentual) / 100;
-}
-
-// COLE O CÓDIGO NOVO AQUI
-function calcularCenariosEconomia(valor: number) {
-  return [5, 10, 15].map((percentual) => ({
-    percentual,
-    economia: simularEconomia(valor, percentual),
-  }));
-}
 
 function calcularDiagnostico(
   registros: RegistroFinanceiroUniversal[],
@@ -476,41 +464,17 @@ function calcularDiagnostico(
 
 // INTELIGÊNCIA COMPARATIVA — períodos consecutivos de mesma duração.
 // Comparações são descritivas e dependem da cobertura dos lançamentos.
-type LinhaComparativa = {
-  titulo: string;
-  atual: number;
-  anterior: number;
-  diferenca: number;
-  percentual: number | null;
-};
-
 function somarTipoComparativo(
   registros: RegistroFinanceiroUniversal[],
   tipo: 'RECEITA' | 'DESPESA'
 ): number {
   return (
     registros
-      .filter((item) => item.tipo === tipo)
-      .reduce((total, item) => total + item.valorCentavos, 0) / 100
+      .filter((registro) => registro.tipo === tipo)
+      .reduce((total, registro) => total + registro.valorCentavos, 0) / 100
   );
 }
 
-function criarLinhaComparativa(
-  titulo: string,
-  atual: number,
-  anterior: number
-): LinhaComparativa {
-  const diferenca = Math.round((atual - anterior) * 100) / 100;
-  return {
-    titulo,
-    atual,
-    anterior,
-    diferenca,
-    percentual: anterior > 0 ? (diferenca / anterior) * 100 : null,
-  };
-}
-
-// Normaliza apenas a chave de comparação; os lançamentos originais permanecem intactos.
 function chaveCategoriaComparativa(nome: string): string {
   const chave = nome
     .trim()
@@ -1077,6 +1041,13 @@ function App() {
       alert('Aguarde a sincronização dos dados antes de importar o arquivo.');
       return;
     }
+    // COLE O CÓDIGO NOVO AQUI
+    if (empresaIdAtual === 'empresa_demo') {
+      alert(
+        'Selecione uma empresa cadastrada antes de importar dados financeiros.'
+      );
+      return;
+    }
     try {
       if (arquivo.size === 0) {
         alert('O arquivo está vazio.');
@@ -1567,7 +1538,6 @@ function App() {
   const lancamentosEmpresa = lancamentosFinanceiros.filter(
     (lancamento) => lancamento.empresaId === empresaIdAtual
   );
-
   // FASE 3 — CONVERSÃO PARA O MODELO UNIVERSAL
 
   const registrosFinanceirosUniversais: RegistroFinanceiroUniversal[] =
@@ -1663,20 +1633,39 @@ function App() {
   const registrosDoPeriodo = dadosUniversaisEmpresa.registrosFinanceiros.filter(
     (registro) => registro.data >= inicioAtual && registro.data <= fimAtual
   );
-  // Janela imediatamente anterior, com o mesmo número de dias do período escolhido.
-  // Evita comparar um mês em andamento com um mês anterior inteiro.
+  // Compara meses pelo mesmo intervalo de dias do calendário.
+  // Para os últimos 90 dias, mantém duas janelas consecutivas de 90 dias.
   const diasNoPeriodo =
     Math.round(
       (Date.parse(`${fimAtual}T00:00:00Z`) -
         Date.parse(`${inicioAtual}T00:00:00Z`)) /
         86400000
     ) + 1;
-  const inicioComparacaoEquivalente = dataISO(
-    new Date(Date.parse(`${inicioAtual}T12:00:00Z`) - diasNoPeriodo * 86400000)
-  );
-  const fimComparacaoEquivalente = dataISO(
-    new Date(Date.parse(`${inicioAtual}T12:00:00Z`) - 86400000)
-  );
+  const inicioComparacaoEquivalente =
+    periodo === 'Este mês'
+      ? dataISO(inicioMesAnterior)
+      : periodo === 'Mês anterior'
+      ? dataISO(new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1))
+      : dataISO(
+          new Date(
+            Date.parse(`${inicioAtual}T12:00:00Z`) - diasNoPeriodo * 86400000
+          )
+        );
+  const fimComparacaoEquivalente =
+    periodo === 'Este mês'
+      ? dataISO(
+          new Date(
+            hoje.getFullYear(),
+            hoje.getMonth() - 1,
+            Math.min(
+              hoje.getDate(),
+              new Date(hoje.getFullYear(), hoje.getMonth(), 0).getDate()
+            )
+          )
+        )
+      : periodo === 'Mês anterior'
+      ? dataISO(new Date(hoje.getFullYear(), hoje.getMonth() - 1, 0))
+      : dataISO(new Date(Date.parse(`${inicioAtual}T12:00:00Z`) - 86400000));
   const registrosComparacao =
     dadosUniversaisEmpresa.registrosFinanceiros.filter(
       (registro) =>
@@ -1695,47 +1684,13 @@ function App() {
   );
   const receitaAtual = somarTipoComparativo(registrosDoPeriodo, 'RECEITA');
   const despesaAtual = somarTipoComparativo(registrosDoPeriodo, 'DESPESA');
-  const linhasComparativas = [
-    criarLinhaComparativa('Receitas', receitaAtual, receitaComparacao),
-    criarLinhaComparativa('Despesas', despesaAtual, despesaComparacao),
-    criarLinhaComparativa(
-      'Receitas menos despesas',
-      receitaAtual - despesaAtual,
-      receitaComparacao - despesaComparacao
-    ),
-  ];
-  const categoriasAtuais = categoriasComparativas(registrosDoPeriodo);
-  const categoriasAnteriores = categoriasComparativas(registrosComparacao);
-  const chavesCategorias = new Set([
-    ...categoriasAtuais.keys(),
-    ...categoriasAnteriores.keys(),
-  ]);
-  const variacoesCategoria = [...chavesCategorias]
-    .map((chave) => {
-      const atual = categoriasAtuais.get(chave);
-      const anterior = categoriasAnteriores.get(chave);
-      return criarLinhaComparativa(
-        atual?.nome ?? anterior?.nome ?? chave,
-        atual?.total ?? 0,
-        anterior?.total ?? 0
-      );
-    })
-    .sort(
-      (a, b) =>
-        Math.abs(b.diferenca) - Math.abs(a.diferenca) ||
-        a.titulo.localeCompare(b.titulo, 'pt-BR')
-    );
-  const variacoesRelevantes = variacoesCategoria
-    .filter((linha) => linha.diferenca !== 0)
-    .slice(0, 5);
-  const formatarDataComparativa = (valor: string) =>
-    valor.split('-').reverse().join('/');
-  const percentualComparativo = (linha: LinhaComparativa) =>
-    linha.percentual === null
-      ? 'Sem base percentual'
-      : `${linha.percentual > 0 ? '+' : ''}${linha.percentual
-          .toFixed(1)
-          .replace('.', ',')}%`;
+  // FASE 5 — Decomposição aritmética da mudança do resultado registrado.
+  // Não atribui causalidade nem confunde alteração de margem com alteração de lucro.
+  const variacaoReceitas = receitaAtual - receitaComparacao;
+  const variacaoDespesas = despesaAtual - despesaComparacao;
+  const contribuicaoReceitas = variacaoReceitas;
+  const contribuicaoDespesas = -variacaoDespesas;
+  const variacaoResultado = contribuicaoReceitas + contribuicaoDespesas;
   const diagnostico = calcularDiagnostico(
     registrosDoPeriodo,
     registrosComparacao,
@@ -1759,76 +1714,60 @@ function App() {
         ]
       : []),
   ];
-  const oportunidades = dadosFinanceirosIncompletos
-    ? []
-    : diagnostico.oportunidades;
-  // RADAR EXECUTIVO — prioridades fundamentadas nos registros do período.
-  // Valores associados são exposição observada, não perdas nem ganhos previstos.
-  const radarPrioridades = [...alertas]
-    .map((alerta) => {
-      const titulo = alerta.titulo;
-      const exposicao =
-        titulo === 'Despesas superiores às receitas'
-          ? Math.abs(diagnostico.resultado)
-          : titulo === 'Despesas elevadas em relação às receitas' ||
-            titulo === 'Despesas acima do período anterior'
-          ? diagnostico.despesas
-          : titulo === 'Sem receitas registradas'
-          ? diagnostico.despesas
-          : titulo === 'Receitas abaixo do período anterior'
-          ? diagnostico.receitas
-          : titulo === 'Resultado financeiro zerado'
-          ? diagnostico.despesas
-          : null;
-      const prioridade = alerta.nivel === 'alto' ? 2 : 1;
-      return { ...alerta, exposicao, prioridade };
-    })
-    .sort(
-      (a, b) =>
-        b.prioridade - a.prioridade ||
-        (b.exposicao ?? 0) - (a.exposicao ?? 0) ||
-        a.titulo.localeCompare(b.titulo, 'pt-BR')
-    );
+  // Consolidar alertas correlatos em uma única orientação executiva.
+  // Os alertas originais continuam disponíveis para outras regras internas.
+  const alertaPrioritario =
+    diagnostico.resultado < 0 && diagnostico.receitas > 0
+      ? {
+          titulo: 'Atenção: suas despesas superaram as receitas.',
+          descricao: `O resultado registrado ficou negativo em ${formatarValorFinanceiro(
+            Math.abs(diagnostico.resultado)
+          )}. ${
+            comparacaoDisponivel && variacaoDespesas > 0
+              ? `As despesas aumentaram ${formatarValorFinanceiro(
+                  variacaoDespesas
+                )} em relação ao período anterior.`
+              : 'Confira quais despesas estão comprometendo o resultado.'
+          }`,
+          recomendacao:
+            'Investigue os gastos que mais pesaram no período e avalie quais podem ser reduzidos sem comprometer a operação.',
+          nivel: 'alto' as const,
+        }
+      : dadosFinanceirosIncompletos
+      ? {
+          titulo: 'Confira se os dados de despesas estão completos.',
+          descricao:
+            'Há receitas registradas, mas nenhuma despesa informada neste período.',
+          recomendacao:
+            'Verifique a importação dos gastos antes de tomar decisões.',
+          nivel: 'medio' as const,
+        }
+      : alertas.length > 0
+      ? {
+          titulo: alertas[0].titulo,
+          descricao: alertas[0].descricao,
+          recomendacao:
+            'Confira os registros relacionados a esse ponto antes de decidir.',
+          nivel: alertas[0].nivel,
+        }
+      : null;
 
-  // Ações concretas, sem estimar ganhos ou prometer resultados.
-  const radarAcoes =
-    diagnostico.quantidade === 0
-      ? []
-      : [
-          ...new Set([
-            ...radarPrioridades.map((alerta) =>
-              alerta.titulo === 'Despesas não informadas'
-                ? 'Conferir se todas as despesas do período foram importadas ou cadastradas.'
-                : alerta.titulo === 'Despesas superiores às receitas'
-                ? 'Revisar as despesas que excedem as receitas e confirmar a integridade dos registros.'
-                : alerta.titulo === 'Sem receitas registradas'
-                ? 'Verificar se houve receitas não importadas ou ausência de faturamento.'
-                : alerta.titulo === 'Receitas abaixo do período anterior'
-                ? 'Identificar quais serviços ou clientes explicam a queda das receitas.'
-                : alerta.titulo === 'Despesas acima do período anterior'
-                ? 'Comparar os gastos por categoria com o período anterior.'
-                : alerta.titulo === 'Despesas elevadas em relação às receitas'
-                ? 'Priorizar a revisão das maiores categorias de despesa.'
-                : 'Conferir os lançamentos e revisar o equilíbrio entre receitas e despesas.'
-            ),
-            ...(dadosFinanceirosIncompletos ? [] : oportunidades),
-            'Conferir se os lançamentos do período estão completos antes de decidir.',
-            'Acompanhar os indicadores no próximo período para verificar a evolução.',
-          ]),
-        ].slice(0, 5);
-
-  const normalizarTextoRadar = (valor: string) =>
-    valor
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, ' ');
-
-  const formatarPercentual = (numero: number | null) =>
-    numero === null
-      ? 'Sem receita no período'
-      : `${numero.toFixed(1).replace('.', ',')}%`;
+  // Oportunidades exigem evidência de risco relevante nos registros.
+  // Não transformar dicas genéricas nem pequenas variações de teste em oportunidades.
+  const oportunidadesRelevantes =
+    !dadosFinanceirosIncompletos && diagnostico.quantidade >= 5
+      ? alertas
+          .filter((alerta) => alerta.nivel === 'alto')
+          .map((alerta) => {
+            if (alerta.titulo.includes('Despesas'))
+              return 'Investigar os gastos que estão comprometendo o resultado e avaliar reduções sem prejudicar a operação.';
+            if (alerta.titulo.includes('Receitas'))
+              return 'Identificar as fontes de receita que perderam movimento e avaliar medidas de recuperação.';
+            return 'Investigar o ponto de atenção identificado antes de definir uma ação.';
+          })
+          .filter((item, indice, lista) => lista.indexOf(item) === indice)
+          .slice(0, 3)
+      : [];
 
   const [secao, setSecao] = useState('Visão geral');
   const [novaDecisao, setNovaDecisao] = useState('');
@@ -1848,6 +1787,14 @@ function App() {
   >({});
 
   const registrarDecisaoVinculada = (texto: string, origem: string) => {
+    if (
+      !usuarioAtual ||
+      empresaIdAtual === 'empresa_demo' ||
+      chaveDecisoesCarregada !== `${usuarioAtual.uid}:${empresaIdAtual}`
+    ) {
+      alert('Selecione uma empresa e aguarde as decisões serem carregadas.');
+      return;
+    }
     const descricao = texto.trim();
     if (!descricao) return;
 
@@ -1892,18 +1839,13 @@ function App() {
     setNovaDecisao('');
   };
 
-  // Relaciona uma recomendação à decisão já registrada no período.
-  const localizarDecisaoRadar = (texto: string) =>
-    decisoes.findIndex((decisao, indice) => {
-      const acompanhamento = acompanhamentos[String(indice)];
-      return (
-        normalizarTextoRadar(decisao) === normalizarTextoRadar(texto) &&
-        acompanhamento?.inicioBase === inicioAtual &&
-        acompanhamento?.fimBase === fimAtual
-      );
-    });
-
   const registrarAvaliacao = (indice: number) => {
+    if (
+      !usuarioAtual ||
+      empresaIdAtual === 'empresa_demo' ||
+      chaveDecisoesCarregada !== `${usuarioAtual.uid}:${empresaIdAtual}`
+    )
+      return;
     const chave = String(indice);
     const acompanhamento = acompanhamentos[chave];
     if (!acompanhamento) return;
@@ -1958,9 +1900,6 @@ function App() {
     }));
   };
 
-  const [alertaSelecionado, setAlertaSelecionado] = useState<string | null>(
-    null
-  );
   const [resultadosDecisoes, setResultadosDecisoes] = useState<
     Record<string, 'PENDENTE' | 'POSITIVO' | 'NEGATIVO'>
   >({});
@@ -1968,30 +1907,45 @@ function App() {
     Record<string, number>
   >({});
 
-  // FASE 07 — Decisões e avaliações sincronizadas por usuário.
-  // A migração do armazenamento antigo requer autorização, pois suas chaves
-  // não identificavam o usuário que criou os dados.
-  const [uidDecisoesCarregado, setUidDecisoesCarregado] = useState<
+  // FASE 7 — Decisões isoladas por empresa. O documento antigo é preservado.
+  const [chaveDecisoesCarregada, setChaveDecisoesCarregada] = useState<
     string | null
   >(null);
   const ultimoPacoteDecisoes = useRef('');
   const envioDecisoesPendente = useRef(false);
-  const usuarioDecisoesRef = useRef<string | null>(null);
+  const chaveDecisoesRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setUidDecisoesCarregado(null);
+    setChaveDecisoesCarregada(null);
     setDecisoes([]);
     setAcompanhamentos({});
     setResultadosDecisoes({});
     setImpactosDecisoes({});
     ultimoPacoteDecisoes.current = '';
     envioDecisoesPendente.current = false;
-    usuarioDecisoesRef.current = usuarioAtual?.uid ?? null;
-    if (!usuarioAtual) return;
 
-    const uid = usuarioAtual.uid;
+    const uid = usuarioAtual?.uid;
+    const empresaValida =
+      !!uid &&
+      empresaIdAtual !== 'empresa_demo' &&
+      empresasCadastradas.some(
+        (e) => e.id === empresaIdAtual && e.proprietarioUid === uid
+      );
+    const chave = empresaValida ? `${uid}:${empresaIdAtual}` : null;
+    chaveDecisoesRef.current = chave;
+    if (!uid || !chave) return;
+
     let ativo = true;
-    const referencia = doc(db, 'usuarios', uid, 'configuracoes', 'decisoes');
+    let inicializando = false;
+    const referencia = doc(
+      db,
+      'usuarios',
+      uid,
+      'empresas',
+      empresaIdAtual,
+      'configuracoes',
+      'decisoes'
+    );
 
     const validarPacote = (valor: unknown) => {
       const dados =
@@ -2036,75 +1990,81 @@ function App() {
     };
 
     const aplicar = (pacote: ReturnType<typeof validarPacote>) => {
-      if (!ativo || usuarioDecisoesRef.current !== uid) return;
+      if (!ativo || chaveDecisoesRef.current !== chave) return;
       ultimoPacoteDecisoes.current = JSON.stringify(pacote);
       setDecisoes(pacote.decisoes);
       setAcompanhamentos(pacote.acompanhamentos);
       setResultadosDecisoes(pacote.resultados);
       setImpactosDecisoes(pacote.impactos);
-      setUidDecisoesCarregado(uid);
+      setChaveDecisoesCarregada(chave);
     };
 
     const cancelar = onSnapshot(
       referencia,
       async (snapshot) => {
-        if (!ativo || usuarioDecisoesRef.current !== uid) return;
-        if (snapshot.metadata.hasPendingWrites || envioDecisoesPendente.current)
+        if (
+          !ativo ||
+          chaveDecisoesRef.current !== chave ||
+          snapshot.metadata.hasPendingWrites ||
+          envioDecisoesPendente.current
+        )
           return;
         if (snapshot.exists()) {
           aplicar(validarPacote(snapshot.data()));
           return;
         }
-
-        // Apenas o primeiro acesso, quando ainda não há decisões na nuvem.
-        // Nunca atribuir silenciosamente dados antigos sem UID à conta atual.
-        let legado: ReturnType<typeof validarPacote> | null = null;
+        if (inicializando) return;
+        inicializando = true;
         try {
-          const ler = (chave: string, padrao: unknown) => {
-            const texto = localStorage.getItem(chave);
-            return texto ? (JSON.parse(texto) as unknown) : padrao;
-          };
-          legado = validarPacote({
-            decisoes: ler('prevanzia_decisoes', []),
-            acompanhamentos: ler('prevanzia_acompanhamentos', {}),
-            resultados: ler('prevanzia_resultados', {}),
-            impactos: ler('prevanzia_impactos', {}),
-          });
-        } catch (erro) {
-          console.error('Falha ao ler decisões antigas:', erro);
-        }
-        const possuiLegado =
-          legado &&
-          (legado.decisoes.length > 0 ||
-            Object.keys(legado.acompanhamentos).length > 0 ||
-            Object.keys(legado.resultados).length > 0 ||
-            Object.keys(legado.impactos).length > 0);
-        const autorizado =
-          possuiLegado &&
-          window.confirm(
-            'Existem decisões antigas salvas neste navegador. Elas pertencem a esta conta? ' +
-              'Clique em OK para sincronizá-las com esta conta; Cancelar para não importar.'
+          // Migração apenas com autorização explícita. Nunca apagar o original.
+          const legadoRef = doc(
+            db,
+            'usuarios',
+            uid,
+            'configuracoes',
+            'decisoes'
           );
-        const inicial = autorizado && legado ? legado : validarPacote({});
-        try {
-          // merge preserva dados caso outro aparelho crie o documento primeiro.
-          // Uma leitura posterior do Firestore confirma o conteúdo persistido.
+          const legadoSnap = await getDoc(legadoRef);
+          if (!ativo || chaveDecisoesRef.current !== chave) return;
+          const legado = legadoSnap.exists()
+            ? validarPacote(legadoSnap.data())
+            : null;
+          const temLegado = !!legado && legado.decisoes.length > 0;
+          let inicial = validarPacote({});
+          if (temLegado) {
+            const autorizado = window.confirm(
+              `Foram encontradas ${legado.decisoes.length} decisões no documento antigo. ` +
+                'Você confirma que TODAS pertencem à empresa selecionada? ' +
+                'OK copia as decisões para esta empresa, mantendo o original. ' +
+                'Cancelar deixa esta empresa sem decisões antigas.'
+            );
+            if (autorizado) inicial = legado;
+          }
+          if (!ativo || chaveDecisoesRef.current !== chave) return;
           envioDecisoesPendente.current = true;
-          await setDoc(referencia, inicial);
-          if (ativo && usuarioDecisoesRef.current === uid) aplicar(inicial);
+          // Se outro dispositivo já criou o documento, não sobrescrever.
+          const existente = await getDoc(referencia);
+          if (!ativo || chaveDecisoesRef.current !== chave) return;
+          if (existente.exists()) {
+            aplicar(validarPacote(existente.data()));
+          } else {
+            await setDoc(referencia, inicial);
+            if (ativo && chaveDecisoesRef.current === chave) aplicar(inicial);
+          }
         } catch (erro) {
-          console.error('Falha ao inicializar decisões no Firestore:', erro);
+          console.error('Falha ao preparar decisões da empresa:', erro);
           alert(
-            'Não foi possível carregar as decisões na nuvem. Verifique a conexão e as permissões.'
+            'Não foi possível carregar as decisões desta empresa. Confira o Firebase.'
           );
         } finally {
+          inicializando = false;
           envioDecisoesPendente.current = false;
         }
       },
       (erro) => {
-        console.error('Falha ao sincronizar decisões:', erro);
+        console.error('Falha ao ler decisões da empresa:', erro);
         alert(
-          'Falha na leitura das decisões no Firebase. Não registre novas decisões até corrigir a conexão.'
+          'Falha na leitura das decisões. Não registre novas decisões até corrigir a conexão.'
         );
       }
     );
@@ -2113,10 +2073,13 @@ function App() {
       ativo = false;
       cancelar();
     };
-  }, [usuarioAtual]);
+  }, [usuarioAtual, empresaIdAtual, empresasCadastradas]);
 
   useEffect(() => {
-    if (!usuarioAtual || uidDecisoesCarregado !== usuarioAtual.uid) return;
+    if (!usuarioAtual || empresaIdAtual === 'empresa_demo') return;
+    const chave = `${usuarioAtual.uid}:${empresaIdAtual}`;
+    if (chaveDecisoesCarregada !== chave || chaveDecisoesRef.current !== chave)
+      return;
     const pacote = {
       decisoes,
       acompanhamentos,
@@ -2126,22 +2089,31 @@ function App() {
     const serializado = JSON.stringify(pacote);
     if (serializado === ultimoPacoteDecisoes.current) return;
     ultimoPacoteDecisoes.current = serializado;
-    const uid = usuarioAtual.uid;
     envioDecisoesPendente.current = true;
-    setDoc(doc(db, 'usuarios', uid, 'configuracoes', 'decisoes'), pacote)
+    setDoc(
+      doc(
+        db,
+        'usuarios',
+        usuarioAtual.uid,
+        'empresas',
+        empresaIdAtual,
+        'configuracoes',
+        'decisoes'
+      ),
+      pacote
+    )
       .catch((erro) => {
-        console.error('Falha ao salvar decisões:', erro);
+        console.error('Falha ao salvar decisões da empresa:', erro);
         ultimoPacoteDecisoes.current = '';
-        alert(
-          'Não foi possível salvar a decisão na nuvem. Confira sua conexão.'
-        );
+        alert('Não foi possível salvar a decisão. Confira sua conexão.');
       })
       .finally(() => {
         envioDecisoesPendente.current = false;
       });
   }, [
     usuarioAtual,
-    uidDecisoesCarregado,
+    empresaIdAtual,
+    chaveDecisoesCarregada,
     decisoes,
     acompanhamentos,
     resultadosDecisoes,
@@ -2222,6 +2194,36 @@ function App() {
     );
   };
 
+  // Avaliação automática descritiva: janela posterior de igual duração,
+  // sem alterar decisões, avaliações históricas ou classificações manuais.
+  const comparacoesAutomaticas = decisoes.map((_, indice) => {
+    const base = acompanhamentos[String(indice)];
+    if (!base?.inicioBase || !base.fimBase || (base.quantidadeBase ?? 0) <= 0)
+      return null;
+    const inicioMs = Date.parse(`${base.inicioBase}T12:00:00Z`);
+    const fimMs = Date.parse(`${base.fimBase}T12:00:00Z`);
+    const duracao = Math.round((fimMs - inicioMs) / 86400000) + 1;
+    if (!Number.isFinite(duracao) || duracao <= 0) return null;
+    const inicioPosterior = dataISO(new Date(fimMs + 86400000));
+    const fimPosterior = dataISO(new Date(fimMs + duracao * 86400000));
+    // Não usar janela incompleta nem períodos futuros.
+    if (fimPosterior > dataISO(new Date())) return null;
+    const posteriores = dadosUniversaisEmpresa.registrosFinanceiros.filter(
+      (registro) =>
+        registro.data >= inicioPosterior && registro.data <= fimPosterior
+    );
+    if (!posteriores.length) return null;
+    const receitas = somarTipoComparativo(posteriores, 'RECEITA');
+    const despesas = somarTipoComparativo(posteriores, 'DESPESA');
+    const resultado = receitas - despesas;
+    const diferenca = resultado - base.resultadoBase;
+    return { inicioPosterior, fimPosterior, resultado, diferenca };
+  });
+
+  const comparacoesDisponiveis = comparacoesAutomaticas.filter(
+    (item) => item !== null
+  ).length;
+
   const positivasAvaliadas = decisoes.filter(
     (_, i) =>
       resultadosDecisoes[String(i)] === 'POSITIVO' &&
@@ -2245,11 +2247,10 @@ function App() {
   const secoes = [
     'Visão geral',
     'Diagnóstico',
-    'Comparativos',
     'Oportunidades',
     'Decisões',
     'Resultados',
-    'Dados financeiros',
+    'Fontes de dados',
     'Empresas',
   ];
 
@@ -2279,7 +2280,10 @@ function App() {
 
         <p className="menu-titulo">PAINEL DO PROPRIETÁRIO</p>
 
-        <nav className="menu">
+        <nav
+          className="menu"
+          style={{ flexWrap: 'wrap', overflowX: 'visible', maxWidth: '100%' }}
+        >
           {secoes.map((item) => (
             <button
               key={item}
@@ -2328,670 +2332,287 @@ function App() {
         </div>
 
         {secao === 'Visão geral' && (
-          <>
-            <section className="saude">
-              <div>
-                <p className="sobretitulo">
-                  SAÚDE FINANCEIRA • {periodo.toUpperCase()}
-                </p>
-                <h2>
-                  {diagnostico.quantidade === 0
-                    ? 'Sem dados no período'
-                    : diagnostico.despesas === 0
-                    ? 'Dados insuficientes para avaliar'
-                    : diagnostico.resultado < 0
-                    ? 'Atenção necessária'
-                    : alertas.length > 0
-                    ? 'Pontos para investigar'
-                    : 'Resultado não negativo'}
-                </h2>
-                <p>
-                  {diagnostico.quantidade > 0 && diagnostico.despesas === 0
-                    ? 'Existem receitas registradas, mas nenhuma despesa informada neste período. Não é possível avaliar o resultado real da empresa com segurança.'
-                    : diagnostico.resumo}
-                </p>
-              </div>
-              <span className="saude-indicador">
-                {radarPrioridades.length} alerta(s)
-              </span>
-            </section>
-
-            <section className="painel" style={{ marginBottom: '24px' }}>
-              <div className="painel-cabecalho">
-                <div>
-                  <p className="sobretitulo">
-                    RADAR EXECUTIVO • {periodo.toUpperCase()}
-                  </p>
-                  <h2>Prioridades e plano de ação</h2>
-                </div>
-                <span className="contador">
-                  {radarPrioridades.length} prioridade(s)
-                </span>
-              </div>
-              {diagnostico.quantidade === 0 ? (
-                <p className="subtitulo">
-                  Sem lançamentos neste período. Importe dados para ativar o
-                  radar.
-                </p>
-              ) : (
-                <>
-                  <p className="subtitulo">
-                    Análise de {diagnostico.quantidade} lançamento(s) entre{' '}
-                    {inicioAtual.split('-').reverse().join('/')} e{' '}
-                    {fimAtual.split('-').reverse().join('/')}. Os valores
-                    representam movimentos registrados, não perdas previstas.
-                  </p>
-                  {dadosFinanceirosIncompletos ? (
-                    <div
-                      style={{
-                        marginTop: '18px',
-                        padding: '18px',
-                        border: '1px solid #e9d8b5',
-                        borderRadius: '12px',
-                        background: '#fffaf0',
-                      }}
-                    >
-                      <strong style={{ display: 'block', marginBottom: '8px' }}>
-                        Verificar despesas não informadas
-                      </strong>
-                      <p style={{ margin: '0 0 12px', lineHeight: 1.6 }}>
-                        Existem receitas registradas, mas nenhuma despesa neste
-                        período. Antes de avaliar a situação financeira,
-                        confirme se os gastos foram importados ou cadastrados. A
-                        ausência de despesas não comprova lucro.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setSecao('Dados financeiros')}
-                        style={{
-                          padding: '10px 14px',
-                          borderRadius: '8px',
-                          border: '1px solid #214b58',
-                          background: '#fff',
-                          color: '#214b58',
-                        }}
-                      >
-                        Conferir dados financeiros
-                      </button>
-                    </div>
-                  ) : radarPrioridades.length === 0 ? (
-                    <p className="subtitulo">
-                      Nenhum alerta disparado pelas regras atuais. Mantenha o
-                      acompanhamento.
-                    </p>
-                  ) : (
-                    <div
-                      style={{ display: 'grid', gap: '12px', margin: '16px 0' }}
-                    >
-                      {radarPrioridades.map((item, indice) => {
-                        const textoDecisao = `Investigar: ${item.titulo}`;
-                        const indiceDecisao =
-                          localizarDecisaoRadar(textoDecisao);
-                        const resultadoDecisao =
-                          indiceDecisao >= 0
-                            ? resultadosDecisoes[String(indiceDecisao)] ??
-                              'PENDENTE'
-                            : null;
-                        return (
-                          <article
-                            key={item.titulo}
-                            style={{
-                              padding: '16px',
-                              border: '1px solid #dce4ef',
-                              borderRadius: '12px',
-                              background: '#f8fafc',
-                            }}
-                          >
-                            <strong>
-                              {indice + 1}. {item.titulo} —{' '}
-                              {item.nivel === 'alto'
-                                ? 'Prioridade alta'
-                                : 'Prioridade moderada'}
-                            </strong>
-                            <p style={{ margin: '8px 0' }}>{item.descricao}</p>
-                            {item.exposicao !== null && (
-                              <p style={{ margin: '8px 0', fontSize: '13px' }}>
-                                Valor relacionado nos registros:{' '}
-                                <strong>
-                                  {formatarValorFinanceiro(item.exposicao)}
-                                </strong>
-                              </p>
-                            )}
-                            <p style={{ margin: '8px 0', fontSize: '13px' }}>
-                              Situação:{' '}
-                              {resultadoDecisao === null
-                                ? 'Sem decisão vinculada'
-                                : resultadoDecisao === 'PENDENTE'
-                                ? 'Decisão registrada — avaliação pendente'
-                                : `Decisão avaliada como ${resultadoDecisao.toLowerCase()}`}
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (indiceDecisao < 0) {
-                                  registrarDecisaoVinculada(
-                                    textoDecisao,
-                                    `Radar: ${item.titulo}`
-                                  );
-                                }
-                                setSecao('Decisões');
-                              }}
-                              style={{
-                                padding: '9px 12px',
-                                borderRadius: '8px',
-                                border: '1px solid #214b58',
-                                background: '#fff',
-                                color: '#214b58',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              {indiceDecisao >= 0
-                                ? 'Ver decisão registrada'
-                                : 'Transformar em decisão'}
-                            </button>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {!dadosFinanceirosIncompletos && radarAcoes.length > 0 && (
-                    <>
-                      <h3>Plano de ação sugerido</h3>
-                      <p className="subtitulo">
-                        Recomendações baseadas nos dados disponíveis; não são
-                        garantias de resultado.
-                      </p>
-
-                      <div
-                        style={{
-                          display: 'grid',
-                          gap: '12px',
-                          marginTop: '12px',
-                        }}
-                      >
-                        {radarAcoes.map((acao, indice) => {
-                          const indiceDecisao = localizarDecisaoRadar(acao);
-                          return (
-                            <article className="oportunidade" key={acao}>
-                              <span>{String(indice + 1).padStart(2, '0')}</span>
-                              <div>
-                                <p>{acao}</p>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (indiceDecisao < 0) {
-                                      registrarDecisaoVinculada(
-                                        acao,
-                                        'Plano de ação do Radar'
-                                      );
-                                    }
-                                    setSecao('Decisões');
-                                  }}
-                                  style={{
-                                    marginTop: '10px',
-                                    padding: '9px 12px',
-                                    borderRadius: '8px',
-                                    border: '1px solid #214b58',
-                                    background: '#fff',
-                                    color: '#214b58',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  {indiceDecisao >= 0
-                                    ? 'Ver decisão registrada'
-                                    : 'Registrar esta ação'}
-                                </button>
-                              </div>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-            </section>
-
-            <section className="indicadores">
-              <article className="indicador">
-                <span>Receitas registradas</span>
-                <strong>{formatarValorFinanceiro(diagnostico.receitas)}</strong>
-                <small>{diagnostico.quantidade} lançamento(s) no período</small>
-              </article>
-              <article className="indicador">
-                <span>Despesas registradas</span>
-                <strong>{formatarValorFinanceiro(diagnostico.despesas)}</strong>
-                <small>Somente despesas cadastradas</small>
-              </article>
-              <article className="indicador">
-                <span>Receitas menos despesas</span>
-                <strong>
-                  {formatarValorFinanceiro(diagnostico.resultado)}
-                </strong>
-                <small>Não representa necessariamente lucro</small>
-              </article>
-              <article className="indicador">
-                <span>Despesas / receitas</span>
-                <strong>
-                  {formatarPercentual(diagnostico.percentualDespesas)}
-                </strong>
-                <small>Proporção dos valores informados</small>
-              </article>
-            </section>
-
-            <div className="duas-colunas">
-              <section className="painel">
-                <div className="painel-cabecalho">
-                  <div>
-                    <p className="sobretitulo">ANÁLISE AUTOMÁTICA</p>
-                    <h2>Alertas financeiros</h2>
-                  </div>
-                  <span className="contador">{alertas.length} alertas</span>
-                </div>
-                {alertas.length === 0 ? (
-                  <p className="subtitulo">
-                    {diagnostico.quantidade === 0
-                      ? 'Nenhum lançamento neste período para analisar.'
-                      : 'Nenhum alerta disparado pelas regras atuais. Continue acompanhando.'}
-                  </p>
-                ) : (
-                  alertas.map((alerta) => (
-                    <article
-                      className="alerta"
-                      key={alerta.titulo}
-                      onClick={() =>
-                        setAlertaSelecionado(
-                          alertaSelecionado === alerta.titulo
-                            ? null
-                            : alerta.titulo
-                        )
-                      }
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <span className={`alerta-marcador ${alerta.nivel}`} />
-                      <div>
-                        <h3>{alerta.titulo}</h3>
-                        <p>{alerta.descricao}</p>
-                        {alertaSelecionado === alerta.titulo && (
-                          <div
-                            style={{
-                              marginTop: '12px',
-                              padding: '14px',
-                              background: '#f3f6fb',
-                              borderRadius: '10px',
-                              fontSize: '13px',
-                              lineHeight: 1.6,
-                            }}
-                          >
-                            <strong>
-                              Prioridade{' '}
-                              {alerta.nivel === 'alto' ? 'alta' : 'moderada'}
-                            </strong>
-                            <p>
-                              Este alerta foi calculado a partir dos lançamentos
-                              registrados nos períodos selecionados.
-                            </p>
-                            <p>
-                              <strong>Motivo:</strong> {alerta.descricao}{' '}
-                              <strong>Próxima ação:</strong>{' '}
-                              {alerta.titulo.includes('Despesas') ||
-                              alerta.titulo.includes('despesas')
-                                ? 'revise as categorias de gastos e confirme se as receitas estão completas.'
-                                : alerta.titulo.includes('Receitas') ||
-                                  alerta.titulo.includes('receitas')
-                                ? 'confira os lançamentos e identifique as fontes de receita que mudaram.'
-                                : 'confira os dados e o período analisado antes de decidir.'}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </article>
-                  ))
-                )}
-              </section>
-              <section className="painel">
-                <div className="painel-cabecalho">
-                  <div>
-                    <p className="sobretitulo">POSSIBILIDADES</p>
-                    <h2>Oportunidades identificadas</h2>
-                  </div>
-                </div>
-                {oportunidades.length === 0 ? (
-                  <p className="subtitulo">
-                    {dadosFinanceirosIncompletos
-                      ? 'Ainda não é possível identificar oportunidades confiáveis: confira primeiro as despesas ausentes.'
-                      : 'Não foram identificadas oportunidades com os dados disponíveis.'}
-                  </p>
-                ) : (
-                  oportunidades.map((item, indice) => (
-                    <article className="oportunidade" key={item}>
-                      <span>{String(indice + 1).padStart(2, '0')}</span>
-                      <p>{item}</p>
-                    </article>
-                  ))
-                )}
-              </section>
-            </div>
-            <section className="recomendacao">
-              <div>
-                <p className="sobretitulo">PRÓXIMA DECISÃO</p>
-                <h2>
-                  {dadosFinanceirosIncompletos
-                    ? 'Confira as despesas do período'
-                    : alertas.length > 0
-                    ? 'Investigue os pontos de atenção'
-                    : 'Mantenha os registros atualizados'}
-                </h2>
-                <p>
-                  {dadosFinanceirosIncompletos
-                    ? 'Antes de decidir, confirme se os gastos foram registrados. Sem essas informações, o saldo positivo não comprova lucro.'
-                    : diagnostico.recomendacao}
-                </p>
-              </div>
-              <span className="recomendacao-etiqueta">
-                Análise automática dos registros
-              </span>
-            </section>
-          </>
-        )}
-        {secao === 'Comparativos' && (
-          <section className="painel">
+          <section className="painel" style={{ maxWidth: '880px' }}>
             <div className="painel-cabecalho">
               <div>
                 <p className="sobretitulo">
-                  INTELIGÊNCIA COMPARATIVA • {periodo.toUpperCase()}
+                  ANÁLISE PARA O PROPRIETÁRIO • {periodo.toUpperCase()}
                 </p>
-                <h2>O que mudou nas finanças?</h2>
+                <h2>O que você precisa saber</h2>
               </div>
-              <span className="contador">
-                {diasNoPeriodo} dia(s) por período
-              </span>
             </div>
-            <p className="subtitulo">
-              Período selecionado: {formatarDataComparativa(inicioAtual)} a{' '}
-              {formatarDataComparativa(fimAtual)}
-              {' • '}Comparação:{' '}
-              {formatarDataComparativa(inicioComparacaoEquivalente)} a{' '}
-              {formatarDataComparativa(fimComparacaoEquivalente)}.
-            </p>
-            <p className="subtitulo">
-              {registrosDoPeriodo.length} lançamento(s) no período atual e{' '}
-              {registrosComparacao.length} no anterior. A comparação utiliza
-              janelas consecutivas de mesma duração, mas não comprova que os
-              registros estejam completos nem que diferenças sejam causadas por
-              uma decisão.
-            </p>
-            {!comparacaoDisponivel ? (
-              <div
+
+            <article
+              style={{
+                marginTop: '24px',
+                padding: '26px',
+                background: '#f8fbfb',
+                border: '1px solid #e0e9e9',
+                borderRadius: '14px',
+              }}
+            >
+              <p className="sobretitulo">SITUAÇÃO DA EMPRESA</p>
+              <h2 style={{ margin: '10px 0 14px', lineHeight: 1.3 }}>
+                {diagnostico.quantidade === 0
+                  ? 'Ainda não tenho informações suficientes para analisar sua empresa.'
+                  : dadosFinanceirosIncompletos
+                  ? 'Precisamos conferir os dados antes de tirar conclusões.'
+                  : comparacaoDisponivel
+                  ? variacaoResultado > 0
+                    ? 'Sua empresa apresentou uma melhora no resultado registrado.'
+                    : variacaoResultado < 0
+                    ? 'O resultado registrado da sua empresa caiu.'
+                    : 'O resultado registrado da sua empresa ficou estável.'
+                  : diagnostico.resultado < 0
+                  ? 'As despesas registradas superaram as receitas.'
+                  : 'Já consigo analisar os registros, mas ainda falta uma comparação.'}
+              </h2>
+              <p
                 style={{
-                  padding: '18px',
-                  background: '#fff7ed',
-                  borderRadius: '12px',
-                  marginTop: '18px',
+                  fontSize: '16px',
+                  lineHeight: 1.7,
+                  marginBottom: '18px',
                 }}
               >
-                <strong>Comparação indisponível</strong>
-                <p>
-                  É necessário ter lançamentos nos dois períodos. Importe ou
-                  registre dados financeiros antes de interpretar mudanças.
-                  Nenhuma variação será presumida.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setSecao('Dados financeiros')}
+                {diagnostico.quantidade === 0
+                  ? 'Importe os dados do sistema que você já utiliza. Assim poderei identificar o que merece sua atenção.'
+                  : dadosFinanceirosIncompletos
+                  ? 'Encontrei receitas, mas não há despesas informadas. Confira se a importação incluiu todos os gastos antes de avaliar o resultado.'
+                  : comparacaoDisponivel
+                  ? `Na comparação com o período anterior, a diferença entre o que entrou e o que saiu ${
+                      variacaoResultado > 0
+                        ? 'melhorou'
+                        : variacaoResultado < 0
+                        ? 'diminuiu'
+                        : 'não mudou'
+                    } ${formatarValorFinanceiro(
+                      Math.abs(variacaoResultado)
+                    )}. ${
+                      Math.abs(contribuicaoDespesas) >=
+                      Math.abs(contribuicaoReceitas)
+                        ? `As despesas ${
+                            variacaoDespesas > 0
+                              ? 'aumentaram'
+                              : variacaoDespesas < 0
+                              ? 'diminuíram'
+                              : 'permaneceram iguais'
+                          } ${formatarValorFinanceiro(
+                            Math.abs(variacaoDespesas)
+                          )} e foram o fator mais relevante nessa diferença.`
+                        : `As receitas ${
+                            variacaoReceitas > 0
+                              ? 'aumentaram'
+                              : variacaoReceitas < 0
+                              ? 'diminuíram'
+                              : 'permaneceram iguais'
+                          } ${formatarValorFinanceiro(
+                            Math.abs(variacaoReceitas)
+                          )} e foram o fator mais relevante nessa diferença.`
+                    }`
+                  : 'Já tenho alguns registros, mas ainda não há dados suficientes de outro período para dizer se houve melhora ou piora.'}
+              </p>
+              <div
+                style={{ borderTop: '1px solid #dce5e7', paddingTop: '18px' }}
+              >
+                <p className="sobretitulo">MINHA RECOMENDAÇÃO</p>
+                <p
                   style={{
-                    padding: '10px 14px',
-                    borderRadius: '9px',
-                    border: '1px solid #214b58',
-                    background: '#fff',
-                    color: '#214b58',
-                    cursor: 'pointer',
+                    fontSize: '16px',
+                    lineHeight: 1.7,
+                    marginTop: '8px',
                   }}
                 >
-                  Ir para dados financeiros
-                </button>
+                  {diagnostico.quantidade === 0
+                    ? 'Comece importando os registros disponíveis. Não é necessário cadastrar tudo novamente.'
+                    : dadosFinanceirosIncompletos
+                    ? 'Confirme se os gastos da empresa estão completos. Sem eles, qualquer conclusão pode ser enganosa.'
+                    : comparacaoDisponivel
+                    ? Math.abs(contribuicaoDespesas) >=
+                      Math.abs(contribuicaoReceitas)
+                      ? variacaoDespesas < 0
+                        ? 'Descubra o que permitiu gastar menos e avalie se essa economia pode continuar sem prejudicar os serviços.'
+                        : variacaoDespesas > 0
+                        ? 'Identifique quais gastos aumentaram e verifique se esse aumento era necessário.'
+                        : 'Confira as despesas e acompanhe os próximos períodos antes de decidir.'
+                      : variacaoReceitas < 0
+                      ? 'Identifique quais serviços ou clientes geraram menos receita e avalie as possíveis causas.'
+                      : variacaoReceitas > 0
+                      ? 'Descubra quais serviços ou clientes contribuíram para o aumento das receitas e avalie se ele pode continuar.'
+                      : 'Acompanhe as receitas nos próximos períodos para entender se houve uma mudança consistente.'
+                    : 'Importe registros de outro período para que eu possa comparar a evolução da empresa.'}
+                </p>
               </div>
-            ) : (
-              <>
-                <div className="indicadores" style={{ marginTop: '20px' }}>
-                  {linhasComparativas.map((linha) => (
-                    <article className="indicador" key={linha.titulo}>
-                      <span>{linha.titulo}</span>
-                      <strong>{formatarValorFinanceiro(linha.atual)}</strong>
-                      <small>
-                        Antes: {formatarValorFinanceiro(linha.anterior)}
-                      </small>
-                      <small>
-                        Diferença: {linha.diferenca > 0 ? '+' : ''}
-                        {formatarValorFinanceiro(linha.diferenca)}
-                        {' • '}
-                        {percentualComparativo(linha)}
-                      </small>
-                    </article>
-                  ))}
-                </div>
-                <div style={{ marginTop: '24px' }}>
-                  <p className="sobretitulo">CATEGORIAS DE DESPESA</p>
-                  <h2>Maiores mudanças por categoria</h2>
-                  {variacoesRelevantes.length === 0 ? (
-                    <p className="subtitulo">
-                      Nenhuma diferença nas despesas por categoria entre os
-                      registros disponíveis.
-                    </p>
-                  ) : (
-                    variacoesRelevantes.map((linha, indice) => (
-                      <article className="oportunidade" key={linha.titulo}>
-                        <span>{String(indice + 1).padStart(2, '0')}</span>
-                        <div>
-                          <strong>{linha.titulo}</strong>
-                          <p>
-                            Atual: {formatarValorFinanceiro(linha.atual)} •
-                            Anterior: {formatarValorFinanceiro(linha.anterior)}
-                          </p>
-                          <p>
-                            {linha.diferenca > 0 ? 'Aumento' : 'Redução'} de{' '}
-                            {formatarValorFinanceiro(Math.abs(linha.diferenca))}
-                            . {percentualComparativo(linha)}.
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              registrarDecisaoVinculada(
-                                `Investigar ${
-                                  linha.diferenca > 0 ? 'aumento' : 'redução'
-                                } das despesas em ${linha.titulo}`,
-                                'Inteligência Comparativa'
-                              );
-                              setSecao('Decisões');
-                            }}
-                            style={{
-                              marginTop: '10px',
-                              padding: '9px 12px',
-                              borderRadius: '8px',
-                              border: '1px solid #214b58',
-                              background: '#fff',
-                              color: '#214b58',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Transformar em decisão
-                          </button>
-                        </div>
-                      </article>
-                    ))
-                  )}
-                </div>
-                <div className="recomendacao" style={{ marginTop: '22px' }}>
-                  <div>
-                    <p className="sobretitulo">LEITURA EXECUTIVA</p>
-                    <h2>O que merece atenção?</h2>
-                    <p>
-                      {linhasComparativas[0].diferenca < 0
-                        ? 'As receitas registradas diminuíram. Verifique fontes de receita e cobertura dos lançamentos.'
-                        : linhasComparativas[0].diferenca > 0
-                        ? 'As receitas registradas aumentaram. Verifique se a mudança é recorrente.'
-                        : 'As receitas registradas não variaram entre os períodos.'}
-                    </p>
-                    <p>
-                      {linhasComparativas[1].diferenca > 0
-                        ? 'As despesas registradas aumentaram. Investigue as categorias com maior diferença.'
-                        : linhasComparativas[1].diferenca < 0
-                        ? 'As despesas registradas diminuíram. Confira se os custos foram registrados integralmente.'
-                        : 'As despesas registradas não variaram entre os períodos.'}
-                    </p>
-                    <p>
-                      Esses números representam movimentos cadastrados, não
-                      lucro líquido, projeção de caixa nem garantia de resultado
-                      futuro.
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
+              <button
+                type="button"
+                onClick={() =>
+                  setSecao(
+                    diagnostico.quantidade === 0
+                      ? 'Fontes de dados'
+                      : 'Diagnóstico'
+                  )
+                }
+                style={{
+                  marginTop: '22px',
+                  padding: '11px 16px',
+                  borderRadius: '8px',
+                  background: '#214b58',
+                  color: 'white',
+                  border: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                {diagnostico.quantidade === 0
+                  ? 'Importar dados'
+                  : 'Ver detalhes da análise'}
+              </button>
+            </article>
+            <p
+              style={{ marginTop: '16px', fontSize: '13px', color: '#64748b' }}
+            >
+              Análise baseada nos registros disponíveis. Não representa lucro
+              líquido nem comprova a causa de uma mudança.
+            </p>
           </section>
         )}
         {secao === 'Diagnóstico' && (
-          <section className="painel">
+          <section className="painel" style={{ maxWidth: '880px' }}>
             <div className="painel-cabecalho">
               <div>
                 <p className="sobretitulo">
-                  ANÁLISE EMPRESARIAL • {periodo.toUpperCase()}
+                  POR TRÁS DA ANÁLISE • {periodo.toUpperCase()}
                 </p>
-                <h2>Diagnóstico financeiro</h2>
+                <h2>Por que chegamos a essa conclusão?</h2>
               </div>
-              <span className="contador">
-                {alertas.length} pontos de atenção
-              </span>
             </div>
-            <p className="subtitulo">
-              {dadosFinanceirosIncompletos
-                ? 'Existem receitas registradas, mas nenhuma despesa informada. Os dados ainda não permitem avaliar o resultado financeiro com segurança.'
-                : diagnostico.resumo}
+            <article
+              style={{
+                padding: '22px',
+                background: '#f4f9f7',
+                border: '1px solid #dce9e4',
+                borderRadius: '16px',
+                lineHeight: 1.65,
+              }}
+            >
+              {diagnostico.quantidade === 0 ? (
+                <p>
+                  Ainda não há registros neste período. Importe os dados da
+                  empresa para iniciar a análise.
+                </p>
+              ) : dadosFinanceirosIncompletos ? (
+                <p>
+                  Encontramos receitas, mas nenhuma despesa registrada. Antes de
+                  avaliar o resultado, confira se todos os gastos foram
+                  importados.
+                </p>
+              ) : !comparacaoDisponivel ? (
+                <p>
+                  Encontramos {diagnostico.quantidade} lançamento(s) neste
+                  período, mas ainda não há registros suficientes no período
+                  anterior para uma comparação confiável.
+                </p>
+              ) : (
+                <>
+                  <p className="sobretitulo">O QUE OS DADOS MOSTRAM</p>
+                  <p>
+                    No período atual, as receitas registradas somam{' '}
+                    <strong>{formatarValorFinanceiro(receitaAtual)}</strong> e
+                    as despesas,{' '}
+                    <strong>{formatarValorFinanceiro(despesaAtual)}</strong>.
+                  </p>
+                  <p>
+                    No período anterior equivalente, foram{' '}
+                    <strong>
+                      {formatarValorFinanceiro(receitaComparacao)}
+                    </strong>{' '}
+                    em receitas e{' '}
+                    <strong>
+                      {formatarValorFinanceiro(despesaComparacao)}
+                    </strong>{' '}
+                    em despesas.
+                  </p>
+                  <div
+                    style={{
+                      borderTop: '1px solid #dce9e4',
+                      marginTop: '16px',
+                      paddingTop: '14px',
+                    }}
+                  >
+                    <p className="sobretitulo">O QUE EXPLICA A DIFERENÇA</p>
+                    <p>
+                      {variacaoDespesas !== 0 &&
+                      Math.abs(contribuicaoDespesas) >=
+                        Math.abs(contribuicaoReceitas)
+                        ? `A maior mudança foi nas despesas, que ${
+                            variacaoDespesas < 0 ? 'caíram' : 'subiram'
+                          } ${formatarValorFinanceiro(
+                            Math.abs(variacaoDespesas)
+                          )}.`
+                        : variacaoReceitas !== 0
+                        ? `A maior mudança foi nas receitas, que ${
+                            variacaoReceitas > 0 ? 'subiram' : 'caíram'
+                          } ${formatarValorFinanceiro(
+                            Math.abs(variacaoReceitas)
+                          )}.`
+                        : 'As receitas e despesas registradas não apresentaram variação entre os períodos.'}{' '}
+                      A diferença no resultado foi de{' '}
+                      {variacaoResultado > 0
+                        ? '+'
+                        : variacaoResultado < 0
+                        ? '−'
+                        : ''}
+                      {formatarValorFinanceiro(Math.abs(variacaoResultado))}.
+                    </p>
+                  </div>
+                </>
+              )}
+            </article>
+            <p
+              style={{ marginTop: '12px', fontSize: '13px', color: '#64748b' }}
+            >
+              Comparação dos lançamentos disponíveis, não uma comprovação de
+              causa ou de lucro líquido.
             </p>
-            <p>
-              Receitas:{' '}
-              <strong>{formatarValorFinanceiro(diagnostico.receitas)}</strong> •
-              Despesas:{' '}
-              <strong>{formatarValorFinanceiro(diagnostico.despesas)}</strong>
-            </p>
-            <p>
-              Despesas sobre receitas:{' '}
-              <strong>
-                {formatarPercentual(diagnostico.percentualDespesas)}
-              </strong>
-            </p>
-            {alertas.length === 0 ? (
-              <p className="subtitulo">
-                {diagnostico.quantidade === 0
-                  ? 'Sem dados para diagnosticar.'
-                  : 'Nenhum alerta encontrado pelas regras atuais.'}
-              </p>
-            ) : (
-              alertas.map((alerta) => (
-                <article className="alerta" key={alerta.titulo}>
-                  <span className={`alerta-marcador ${alerta.nivel}`} />
+            {alertaPrioritario && (
+              <div style={{ marginTop: '18px' }}>
+                <h3 style={{ marginBottom: '12px' }}>
+                  Principal ponto de atenção
+                </h3>
+                <article className="alerta">
+                  <span
+                    className={`alerta-marcador ${alertaPrioritario.nivel}`}
+                  />
                   <div>
-                    <h3>
-                      {alerta.titulo} — prioridade{' '}
-                      {alerta.nivel === 'alto' ? 'alta' : 'moderada'}
-                    </h3>
-                    <p>{alerta.descricao}</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        registrarDecisaoVinculada(
-                          `Investigar: ${alerta.titulo}`,
-                          `Alerta: ${alerta.titulo}`
-                        );
-                        setSecao('Decisões');
-                      }}
-                      style={{
-                        marginTop: '10px',
-                        padding: '9px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid #214b58',
-                        background: '#fff',
-                        color: '#214b58',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Criar decisão deste alerta
-                    </button>
+                    <h3>{alertaPrioritario.titulo}</h3>
+                    <p>{alertaPrioritario.descricao}</p>
+                    <p style={{ marginTop: '12px' }}>
+                      <strong>Minha recomendação:</strong>{' '}
+                      {alertaPrioritario.recomendacao}
+                    </p>
                   </div>
                 </article>
-              ))
-            )}
-
-            {diagnostico.despesas > 0 && (
-              <div className="recomendacao">
-                <div>
-                  <p className="sobretitulo">SIMULAÇÃO DE IMPACTO</p>
-
-                  <h2>Quanto a empresa poderia economizar?</h2>
-
-                  <p>
-                    Cenários hipotéticos de redução sobre as despesas
-                    registradas no período:
-                  </p>
-
-                  {calcularCenariosEconomia(diagnostico.despesas).map(
-                    (cenario) => (
-                      <p key={cenario.percentual}>
-                        <strong>{cenario.percentual}% de redução:</strong>{' '}
-                        {formatarValorFinanceiro(cenario.economia)}
-                      </p>
-                    )
-                  )}
-
-                  {diagnostico.maiorCategoriaDespesa && (
-                    <div>
-                      <h3>Simulação por categoria de despesa</h3>
-
-                      <p>
-                        <strong>Categoria:</strong>{' '}
-                        {diagnostico.maiorCategoriaDespesa.nome}
-                      </p>
-
-                      <p>
-                        <strong>Valor registrado:</strong>{' '}
-                        {formatarValorFinanceiro(
-                          diagnostico.maiorCategoriaDespesa.valor
-                        )}
-                      </p>
-
-                      {calcularCenariosEconomia(
-                        diagnostico.maiorCategoriaDespesa.valor
-                      ).map((cenario) => (
-                        <p key={cenario.percentual}>
-                          <strong>{cenario.percentual}% de redução:</strong>{' '}
-                          {formatarValorFinanceiro(cenario.economia)}
-                        </p>
+                {alertas.length > 1 && (
+                  <details style={{ marginTop: '12px' }}>
+                    <summary style={{ cursor: 'pointer', color: '#64748b' }}>
+                      Consultar os {alertas.length} alertas técnicos (opcional)
+                    </summary>
+                    <div style={{ marginTop: '12px' }}>
+                      {alertas.map((alerta, indice) => (
+                        <article
+                          className="alerta"
+                          key={`${alerta.titulo}-${indice}`}
+                        >
+                          <span className={`alerta-marcador ${alerta.nivel}`} />
+                          <div>
+                            <h3>{alerta.titulo}</h3>
+                            <p>{alerta.descricao}</p>
+                          </div>
+                        </article>
                       ))}
-
-                      <p>
-                        Simulação hipotética aplicada somente à categoria
-                        apresentada. Não representa economia garantida.
-                      </p>
                     </div>
-                  )}
-
-                  <p>
-                    Estes valores são simulações matemáticas, não economias
-                    garantidas. A viabilidade depende das despesas que realmente
-                    podem ser reduzidas.
-                  </p>
-                </div>
+                  </details>
+                )}
               </div>
             )}
-
-            <div className="recomendacao">
-              <div>
-                <p className="sobretitulo">ORIENTAÇÃO INICIAL</p>
-                <h2>O que investigar agora</h2>
-                <p>{diagnostico.recomendacao}</p>
-              </div>
-            </div>
           </section>
         )}
         {secao === 'Oportunidades' && (
@@ -2999,676 +2620,784 @@ function App() {
             <div className="painel-cabecalho">
               <div>
                 <p className="sobretitulo">
-                  POTENCIAL DE MELHORIA • {periodo.toUpperCase()}
+                  OPORTUNIDADES • {periodo.toUpperCase()}
                 </p>
-                <h2>Oportunidades para a empresa</h2>
+                <h2>Onde vale a pena agir?</h2>
               </div>
-              <span className="contador">{oportunidades.length} sugestões</span>
             </div>
-            {oportunidades.length === 0 ? (
-              <p className="subtitulo">
-                Importe ou registre movimentos financeiros para receber
-                sugestões.
-              </p>
+            {oportunidadesRelevantes.length === 0 ? (
+              <article
+                style={{
+                  padding: '22px',
+                  background: '#f4f9f7',
+                  border: '1px solid #dce9e4',
+                  borderRadius: '16px',
+                  lineHeight: 1.65,
+                }}
+              >
+                <h3 style={{ marginTop: 0 }}>
+                  Nenhuma oportunidade relevante identificada neste período.
+                </h3>
+                <p style={{ marginBottom: 0 }}>
+                  {dadosFinanceirosIncompletos || diagnostico.quantidade < 5
+                    ? 'Os registros disponíveis ainda são limitados para recomendar ações específicas com segurança. Confira se os dados da empresa estão completos.'
+                    : 'As regras atuais não identificaram um problema prioritário que justifique uma recomendação adicional. Isso não significa que não existam oportunidades na empresa.'}
+                </p>
+              </article>
             ) : (
-              oportunidades.map((item, indice) => (
-                <article className="oportunidade" key={item}>
-                  <span>{String(indice + 1).padStart(2, '0')}</span>
-                  <div>
-                    <p>{item}</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        registrarDecisaoVinculada(
-                          item,
-                          'Oportunidade identificada'
-                        );
-                        setSecao('Decisões');
-                      }}
-                      style={{
-                        marginTop: '10px',
-                        padding: '9px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid #214b58',
-                        background: '#fff',
-                        color: '#214b58',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Transformar em decisão
-                    </button>
-                  </div>
-                </article>
-              ))
-            )}
-            <div className="recomendacao">
-              <div>
-                <p className="sobretitulo">PRÓXIMO PASSO</p>
-                <h2>Valide as oportunidades</h2>
-                <p>
-                  Estas sugestões são baseadas nos lançamentos disponíveis, não
-                  em previsões ou garantias de ganho.
+              <>
+                <p style={{ color: '#64748b' }}>
+                  Pontos prioritários identificados nos registros disponíveis:
                 </p>
-              </div>
-            </div>
+                {oportunidadesRelevantes.map((item, indice) => (
+                  <article className="oportunidade" key={item}>
+                    <span>{String(indice + 1).padStart(2, '0')}</span>
+                    <div>
+                      <p>{item}</p>
+                    </div>
+                  </article>
+                ))}
+              </>
+            )}
+            <p
+              style={{ marginTop: '14px', color: '#64748b', fontSize: '13px' }}
+            >
+              Recomendações baseadas apenas nos dados disponíveis; não são
+              previsões nem garantias de resultado.
+            </p>
           </section>
         )}
         {secao === 'Decisões' && (
           <section className="painel">
             <div className="painel-cabecalho">
               <div>
-                <p className="sobretitulo">PLANO DE AÇÃO</p>
-                <h2>Minhas decisões</h2>
+                <p className="sobretitulo">ESCOLHAS DO PROPRIETÁRIO</p>
+                <h2>Decisões em acompanhamento</h2>
               </div>
               <span className="contador">{decisoes.length} registradas</span>
             </div>
-
-            <p className="subtitulo" style={{ marginBottom: '16px' }}>
-              Registre as ações escolhidas para acompanhar seus efeitos. As
-              decisões desta versão ficam salvas neste navegador.
+            <p className="subtitulo">
+              O PREVANZIA acompanha as decisões registradas e verifica mudanças
+              nos indicadores quando houver dados posteriores comparáveis.
             </p>
-            <form
-              onSubmit={(evento) => {
-                evento.preventDefault();
-
-                if (!novaDecisao.trim()) return;
-
-                registrarDecisaoVinculada(novaDecisao, 'Decisão manual');
-              }}
-            >
-              <input
-                type="text"
-                value={novaDecisao}
-                onChange={(evento) => setNovaDecisao(evento.target.value)}
-                placeholder="Ex.: Revisar preços dos serviços"
-                aria-label="Nova decisão"
-                style={{
-                  width: '100%',
-                  padding: '13px',
-                  border: '1px solid #dce4ef',
-                  borderRadius: '10px',
-                  marginBottom: '12px',
-                }}
-              />
-
-              <button
-                type="submit"
-                style={{
-                  background: '#214b58',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '10px',
-                  padding: '12px 18px',
-                  fontWeight: 700,
-                }}
-              >
-                Registrar decisão
-              </button>
-            </form>
-
             {decisoes.length === 0 ? (
-              <p className="subtitulo">
-                Nenhuma decisão registrada nesta conta.
-              </p>
+              <p>Nenhuma decisão registrada até agora.</p>
             ) : (
               <div style={{ marginTop: '20px' }}>
-                {decisoes.map((decisao, indice) => (
-                  <article className="oportunidade" key={indice}>
-                    <span>{String(indice + 1).padStart(2, '0')}</span>
-                    <div>
-                      <p>{decisao}</p>
-                      {acompanhamentos[String(indice)] && (
+                {decisoes.map((decisao, indice) => {
+                  const acompanhamento = acompanhamentos[String(indice)];
+                  const avaliada = decisaoPossuiAvaliacaoValida(indice);
+                  const comparacaoAutomatica = comparacoesAutomaticas[indice];
+                  return (
+                    <article className="oportunidade" key={indice}>
+                      <span>{String(indice + 1).padStart(2, '0')}</span>
+                      <div>
+                        <p>{decisao}</p>
                         <small style={{ color: '#64748b' }}>
-                          {acompanhamentos[String(indice)].origem} • Base:{' '}
-                          {acompanhamentos[String(indice)].periodoBase} •{' '}
-                          Resultado inicial:{' '}
-                          {formatarValorFinanceiro(
-                            acompanhamentos[String(indice)].resultadoBase
-                          )}
+                          {comparacaoAutomatica
+                            ? `Comparação automática: resultado ${
+                                comparacaoAutomatica.diferenca > 0
+                                  ? 'melhorou'
+                                  : comparacaoAutomatica.diferenca < 0
+                                  ? 'piorou'
+                                  : 'ficou estável'
+                              } em ${formatarValorFinanceiro(
+                                Math.abs(comparacaoAutomatica.diferenca)
+                              )} no período posterior. Isso não comprova a causa.`
+                            : avaliada
+                            ? 'Há uma comparação posterior registrada.'
+                            : 'Aguardando dados de um período posterior equivalente.'}
                         </small>
-                      )}
-                    </div>
-                  </article>
-                ))}
+                        {acompanhamento && (
+                          <p
+                            style={{
+                              fontSize: '12px',
+                              color: '#64748b',
+                              marginTop: '6px',
+                            }}
+                          >
+                            Origem: {acompanhamento.origem}
+                          </p>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             )}
+            <details
+              style={{
+                marginTop: '22px',
+                borderTop: '1px solid #e2e8f0',
+                paddingTop: '16px',
+              }}
+            >
+              <summary
+                style={{ cursor: 'pointer', color: '#214b58', fontWeight: 600 }}
+              >
+                Registrar uma decisão manualmente
+              </summary>
+              <form
+                style={{ marginTop: '14px' }}
+                onSubmit={(evento) => {
+                  evento.preventDefault();
+                  if (!novaDecisao.trim()) return;
+                  registrarDecisaoVinculada(novaDecisao, 'Decisão manual');
+                }}
+              >
+                <input
+                  type="text"
+                  value={novaDecisao}
+                  onChange={(evento) => setNovaDecisao(evento.target.value)}
+                  placeholder="Ex.: Rever condições com fornecedores"
+                  aria-label="Nova decisão"
+                  style={{
+                    width: '100%',
+                    padding: '13px',
+                    border: '1px solid #dce4ef',
+                    borderRadius: '10px',
+                    marginBottom: '12px',
+                  }}
+                />
+                <button
+                  type="submit"
+                  style={{
+                    background: '#214b58',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '12px 18px',
+                    fontWeight: 700,
+                  }}
+                >
+                  Registrar decisão
+                </button>
+              </form>
+            </details>
           </section>
         )}
         {secao === 'Resultados' && (
           <section className="painel">
             <div className="painel-cabecalho">
               <div>
-                <p className="sobretitulo">ACOMPANHAMENTO</p>
-                <h2>Resultados das decisões</h2>
+                <p className="sobretitulo">O QUE ACONTECEU DEPOIS?</p>
+                <h2>Acompanhamento dos resultados</h2>
               </div>
-              <span className="contador">{decisoes.length} decisões</span>
             </div>
-
-            <p className="subtitulo">
-              Acompanhe as decisões registradas e os resultados que ainda
-              precisam ser avaliados.
-            </p>
-
-            <div
+            <article
               style={{
-                padding: '16px 20px',
-                background: '#f0fdf4',
-                borderRadius: '12px',
-                marginTop: '20px',
-                marginBottom: '20px',
+                padding: '22px',
+                background: '#f4f9f7',
+                border: '1px solid #dce9e4',
+                borderRadius: '16px',
+                lineHeight: 1.65,
               }}
             >
-              <p style={{ margin: '0 0 8px' }}>
-                Decisões com resultado positivo
+              <h3 style={{ fontSize: '21px', marginTop: 0 }}>
+                {decisoes.length === 0
+                  ? 'Ainda não há decisões para acompanhar.'
+                  : comparacoesDisponiveis === 0
+                  ? 'Ainda não temos resultados posteriores suficientes.'
+                  : 'O PREVANZIA identificou mudanças após algumas decisões.'}
+              </h3>
+              <p>
+                {decisoes.length === 0
+                  ? 'Quando uma decisão for registrada, ela poderá ser acompanhada com os dados da empresa.'
+                  : `Você possui ${decisoes.length} ${
+                      decisoes.length === 1
+                        ? 'decisão registrada'
+                        : 'decisões registradas'
+                    }. ${
+                      comparacoesDisponiveis === 0
+                        ? 'Ainda não há períodos posteriores completos com registros suficientes para uma comparação.'
+                        : `Já foi possível comparar automaticamente ${comparacoesDisponiveis} ${
+                            comparacoesDisponiveis === 1
+                              ? 'decisão'
+                              : 'decisões'
+                          } com períodos posteriores.`
+                    }`}
               </p>
-
-              <strong style={{ fontSize: '28px', color: '#166534' }}>
-                {positivasAvaliadas}
-              </strong>
-            </div>
-
-            <div
-              style={{
-                padding: '16px 20px',
-                background: '#fff1f2',
-                borderRadius: '12px',
-                marginTop: '20px',
-                marginBottom: '20px',
-              }}
-            >
-              <p style={{ margin: '0 0 8px' }}>
-                Decisões com resultado negativo
-              </p>
-
-              <strong style={{ fontSize: '28px', color: '#b91c1c' }}>
-                {negativasAvaliadas}
-              </strong>
-            </div>
-
-            <div
-              style={{
-                padding: '16px 20px',
-                background: '#fff7ed',
-                borderRadius: '12px',
-                marginTop: '20px',
-                marginBottom: '20px',
-              }}
-            >
-              <p style={{ margin: '0 0 8px' }}>
-                Decisões pendentes de avaliação
-              </p>
-
-              <strong style={{ fontSize: '28px', color: '#c2410c' }}>
-                {decisoes.length - positivasAvaliadas - negativasAvaliadas}
-              </strong>
-            </div>
-
-            <div
-              style={{
-                padding: '16px 20px',
-                background: '#eef2ff',
-                borderRadius: '12px',
-                marginTop: '20px',
-                marginBottom: '20px',
-              }}
-            >
-              <p style={{ margin: '0 0 8px' }}>Taxa de sucesso das decisões</p>
-
-              <strong style={{ fontSize: '28px', color: '#3730a3' }}>
-                {positivasAvaliadas + negativasAvaliadas === 0
-                  ? 'Aguardando avaliações'
-                  : `${(
-                      (positivasAvaliadas /
-                        (positivasAvaliadas + negativasAvaliadas)) *
-                      100
-                    )
-                      .toFixed(1)
-                      .replace('.', ',')}%`}
-              </strong>
-            </div>
-
-            <div
-              style={{
-                padding: '20px',
-                background: '#eaf6f5',
-                borderRadius: '12px',
-                marginTop: '20px',
-                marginBottom: '20px',
-              }}
-            >
-              <p style={{ margin: '0 0 8px' }}>
-                Valores positivos informados após avaliação
-              </p>
-
-              <strong
+              <div
                 style={{
-                  fontSize: '28px',
-                  color: '#214b58',
+                  borderTop: '1px solid #dce9e4',
+                  paddingTop: '12px',
+                  marginTop: '12px',
                 }}
               >
-                {formatarImpactoAvaliado(ganhosAvaliados)}
-              </strong>
-
-              <p style={{ fontSize: '13px', marginTop: '8px' }}>
-                Valores positivos informados para decisões com avaliação
-                financeira válida.
-              </p>
-            </div>
-            <div
-              style={{
-                padding: '20px',
-                background: '#fff1f0',
-                borderRadius: '12px',
-                marginBottom: '20px',
-              }}
-            >
-              <p style={{ margin: '0 0 8px' }}>
-                Valores negativos informados após avaliação
-              </p>
-
-              <strong
-                style={{
-                  fontSize: '28px',
-                  color: '#b42318',
-                }}
+                <p className="sobretitulo">PRÓXIMO PASSO</p>
+                <p style={{ marginBottom: 0 }}>
+                  {decisoes.length === 0
+                    ? 'Acompanhe as recomendações do PREVANZIA antes de registrar uma decisão.'
+                    : 'O PREVANZIA fará a comparação automaticamente quando houver registros de um período posterior completo e equivalente. Mudanças observadas não comprovam que a decisão foi sua causa.'}
+                </p>
+              </div>
+            </article>
+            <details style={{ marginTop: '20px' }}>
+              <summary
+                style={{ cursor: 'pointer', color: '#214b58', fontWeight: 600 }}
               >
-                {formatarImpactoAvaliado(perdasAvaliadas)}
-              </strong>
+                Consultar histórico e avaliações detalhadas (opcional)
+              </summary>
+              <div style={{ marginTop: '18px' }}>
+                <div className="painel-cabecalho">
+                  <div>
+                    <p className="sobretitulo">ACOMPANHAMENTO</p>
+                    <h2>Resultados das decisões</h2>
+                  </div>
+                  <span className="contador">{decisoes.length} decisões</span>
+                </div>
 
-              <p style={{ fontSize: '13px', marginTop: '8px' }}>
-                Valores negativos informados para decisões com avaliação
-                financeira válida.
-              </p>
-            </div>
+                <p className="subtitulo">
+                  Acompanhe as decisões registradas e os resultados que ainda
+                  precisam ser avaliados.
+                </p>
 
-            <div
-              style={{
-                padding: '20px',
-                background: '#eef2ff',
-                borderRadius: '12px',
-                marginBottom: '20px',
-              }}
-            >
-              <p style={{ margin: '0 0 8px' }}>Saldo dos impactos informados</p>
+                <div
+                  style={{
+                    padding: '16px 20px',
+                    background: '#f0fdf4',
+                    borderRadius: '12px',
+                    marginTop: '20px',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <p style={{ margin: '0 0 8px' }}>
+                    Decisões com resultado positivo
+                  </p>
 
-              <strong
-                style={{
-                  fontSize: '28px',
-                  color: '#214b58',
-                }}
-              >
-                {formatarImpactoAvaliado(ganhosAvaliados - perdasAvaliadas)}
-              </strong>
+                  <strong style={{ fontSize: '28px', color: '#166534' }}>
+                    {positivasAvaliadas}
+                  </strong>
+                </div>
 
-              <p style={{ fontSize: '13px', marginTop: '8px' }}>
-                Diferença entre valores informados após avaliações válidas; não
-                comprova causalidade.
-              </p>
-            </div>
+                <div
+                  style={{
+                    padding: '16px 20px',
+                    background: '#fff1f2',
+                    borderRadius: '12px',
+                    marginTop: '20px',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <p style={{ margin: '0 0 8px' }}>
+                    Decisões com resultado negativo
+                  </p>
 
-            <div
-              style={{
-                padding: '20px',
-                background: '#f0f9ff',
-                borderRadius: '12px',
-                marginTop: '20px',
-                marginBottom: '20px',
-              }}
-            >
-              <p style={{ margin: '0 0 8px' }}>
-                Percentual de ganhos financeiros
-              </p>
+                  <strong style={{ fontSize: '28px', color: '#b91c1c' }}>
+                    {negativasAvaliadas}
+                  </strong>
+                </div>
 
-              <strong style={{ fontSize: '28px', color: '#0369a1' }}>
-                {ganhosAvaliados + perdasAvaliadas === 0
-                  ? 'Aguardando resultados financeiros'
-                  : `${(
-                      (ganhosAvaliados / (ganhosAvaliados + perdasAvaliadas)) *
-                      100
-                    )
-                      .toFixed(1)
-                      .replace('.', ',')}%`}
-              </strong>
+                <div
+                  style={{
+                    padding: '16px 20px',
+                    background: '#fff7ed',
+                    borderRadius: '12px',
+                    marginTop: '20px',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <p style={{ margin: '0 0 8px' }}>
+                    Decisões pendentes de avaliação
+                  </p>
 
-              <p style={{ fontSize: '13px', marginTop: '8px' }}>
-                Participação dos valores positivos informados no total de
-                impactos avaliados.
-              </p>
-            </div>
+                  <strong style={{ fontSize: '28px', color: '#c2410c' }}>
+                    {decisoes.length - positivasAvaliadas - negativasAvaliadas}
+                  </strong>
+                </div>
 
-            {decisoes.length === 0 ? (
-              <p className="subtitulo">
-                Nenhuma decisão registrada para acompanhar.
-              </p>
-            ) : (
-              <div style={{ marginTop: '20px' }}>
-                {decisoes.map((decisao, indice) => (
-                  <article className="oportunidade" key={indice}>
-                    <span>{String(indice + 1).padStart(2, '0')}</span>
-                    <div>
-                      <div>
-                        <strong>{decisao}</strong>
-                        {/* CÓDIGO NOVO COMEÇA AQUI */}
-                        <p>
-                          Classificação informada:{' '}
-                          {resultadosDecisoes[String(indice)] || 'PENDENTE'}
-                        </p>
-                        {acompanhamentos[String(indice)] &&
-                          (() => {
-                            const acompanhamento =
-                              acompanhamentos[String(indice)];
-                            const duracaoDias = (
-                              inicio: string,
-                              fim: string
-                            ) => {
-                              const primeiro = Date.parse(
-                                `${inicio}T12:00:00Z`
-                              );
-                              const ultimo = Date.parse(`${fim}T12:00:00Z`);
-                              return Number.isFinite(primeiro) &&
-                                Number.isFinite(ultimo)
-                                ? Math.round((ultimo - primeiro) / 86400000) + 1
-                                : 0;
-                            };
-                            const temAvaliacao =
-                              acompanhamento.resultadoAvaliacao !== undefined;
-                            const dadosSuficientes =
-                              (acompanhamento.quantidadeBase ?? 0) > 0 &&
-                              (acompanhamento.quantidadeAvaliacao ?? 0) > 0;
-                            const janelasDiferentes =
-                              acompanhamento.inicioBase !==
-                                acompanhamento.inicioAvaliacao ||
-                              acompanhamento.fimBase !==
-                                acompanhamento.fimAvaliacao;
-                            const duracoesIguais =
-                              duracaoDias(
-                                acompanhamento.inicioBase,
-                                acompanhamento.fimBase
-                              ) > 0 &&
-                              duracaoDias(
-                                acompanhamento.inicioBase,
-                                acompanhamento.fimBase
-                              ) ===
-                                duracaoDias(
-                                  acompanhamento.inicioAvaliacao ?? '',
-                                  acompanhamento.fimAvaliacao ?? ''
-                                );
-                            const comparacaoPossivel =
-                              temAvaliacao &&
-                              dadosSuficientes &&
-                              janelasDiferentes &&
-                              duracoesIguais;
-                            const variacao =
-                              acompanhamento.resultadoAvaliacao === undefined
-                                ? null
-                                : acompanhamento.resultadoAvaliacao -
-                                  acompanhamento.resultadoBase;
-                            return (
-                              <div
-                                style={{
-                                  margin: '12px 0',
-                                  padding: '14px',
-                                  borderRadius: '10px',
-                                  background: '#f1f5f9',
-                                  lineHeight: 1.6,
-                                }}
-                              >
-                                <strong>
-                                  Indicadores associados à decisão
-                                </strong>
-                                <p>Origem: {acompanhamento.origem}</p>
-                                <p>
-                                  Base ({acompanhamento.periodoBase}): receitas{' '}
-                                  {formatarValorFinanceiro(
-                                    acompanhamento.receitasBase
-                                  )}
-                                  , despesas{' '}
-                                  {formatarValorFinanceiro(
-                                    acompanhamento.despesasBase
-                                  )}
-                                  , resultado{' '}
-                                  {formatarValorFinanceiro(
-                                    acompanhamento.resultadoBase
-                                  )}
-                                  .
-                                </p>
-                                {acompanhamento.avaliadaEm &&
+                <div
+                  style={{
+                    padding: '16px 20px',
+                    background: '#eef2ff',
+                    borderRadius: '12px',
+                    marginTop: '20px',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <p style={{ margin: '0 0 8px' }}>
+                    Taxa de sucesso das decisões
+                  </p>
+
+                  <strong style={{ fontSize: '28px', color: '#3730a3' }}>
+                    {positivasAvaliadas + negativasAvaliadas === 0
+                      ? 'Aguardando avaliações'
+                      : `${(
+                          (positivasAvaliadas /
+                            (positivasAvaliadas + negativasAvaliadas)) *
+                          100
+                        )
+                          .toFixed(1)
+                          .replace('.', ',')}%`}
+                  </strong>
+                </div>
+
+                <div
+                  style={{
+                    padding: '20px',
+                    background: '#eaf6f5',
+                    borderRadius: '12px',
+                    marginTop: '20px',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <p style={{ margin: '0 0 8px' }}>
+                    Valores positivos informados após avaliação
+                  </p>
+
+                  <strong
+                    style={{
+                      fontSize: '28px',
+                      color: '#214b58',
+                    }}
+                  >
+                    {formatarImpactoAvaliado(ganhosAvaliados)}
+                  </strong>
+
+                  <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                    Valores positivos informados para decisões com avaliação
+                    financeira válida.
+                  </p>
+                </div>
+                <div
+                  style={{
+                    padding: '20px',
+                    background: '#fff1f0',
+                    borderRadius: '12px',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <p style={{ margin: '0 0 8px' }}>
+                    Valores negativos informados após avaliação
+                  </p>
+
+                  <strong
+                    style={{
+                      fontSize: '28px',
+                      color: '#b42318',
+                    }}
+                  >
+                    {formatarImpactoAvaliado(perdasAvaliadas)}
+                  </strong>
+
+                  <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                    Valores negativos informados para decisões com avaliação
+                    financeira válida.
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    padding: '20px',
+                    background: '#eef2ff',
+                    borderRadius: '12px',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <p style={{ margin: '0 0 8px' }}>
+                    Saldo dos impactos informados
+                  </p>
+
+                  <strong
+                    style={{
+                      fontSize: '28px',
+                      color: '#214b58',
+                    }}
+                  >
+                    {formatarImpactoAvaliado(ganhosAvaliados - perdasAvaliadas)}
+                  </strong>
+
+                  <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                    Diferença entre valores informados após avaliações válidas;
+                    não comprova causalidade.
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    padding: '20px',
+                    background: '#f0f9ff',
+                    borderRadius: '12px',
+                    marginTop: '20px',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <p style={{ margin: '0 0 8px' }}>
+                    Percentual de ganhos financeiros
+                  </p>
+
+                  <strong style={{ fontSize: '28px', color: '#0369a1' }}>
+                    {ganhosAvaliados + perdasAvaliadas === 0
+                      ? 'Aguardando resultados financeiros'
+                      : `${(
+                          (ganhosAvaliados /
+                            (ganhosAvaliados + perdasAvaliadas)) *
+                          100
+                        )
+                          .toFixed(1)
+                          .replace('.', ',')}%`}
+                  </strong>
+
+                  <p style={{ fontSize: '13px', marginTop: '8px' }}>
+                    Participação dos valores positivos informados no total de
+                    impactos avaliados.
+                  </p>
+                </div>
+
+                {decisoes.length === 0 ? (
+                  <p className="subtitulo">
+                    Nenhuma decisão registrada para acompanhar.
+                  </p>
+                ) : (
+                  <div style={{ marginTop: '20px' }}>
+                    {decisoes.map((decisao, indice) => (
+                      <article className="oportunidade" key={indice}>
+                        <span>{String(indice + 1).padStart(2, '0')}</span>
+                        <div>
+                          <div>
+                            <strong>{decisao}</strong>
+                            {/* CÓDIGO NOVO COMEÇA AQUI */}
+                            <p>
+                              Classificação informada:{' '}
+                              {resultadosDecisoes[String(indice)] || 'PENDENTE'}
+                            </p>
+                            {acompanhamentos[String(indice)] &&
+                              (() => {
+                                const acompanhamento =
+                                  acompanhamentos[String(indice)];
+                                const duracaoDias = (
+                                  inicio: string,
+                                  fim: string
+                                ) => {
+                                  const primeiro = Date.parse(
+                                    `${inicio}T12:00:00Z`
+                                  );
+                                  const ultimo = Date.parse(`${fim}T12:00:00Z`);
+                                  return Number.isFinite(primeiro) &&
+                                    Number.isFinite(ultimo)
+                                    ? Math.round(
+                                        (ultimo - primeiro) / 86400000
+                                      ) + 1
+                                    : 0;
+                                };
+                                const temAvaliacao =
                                   acompanhamento.resultadoAvaliacao !==
-                                    undefined && (
+                                  undefined;
+                                const dadosSuficientes =
+                                  (acompanhamento.quantidadeBase ?? 0) > 0 &&
+                                  (acompanhamento.quantidadeAvaliacao ?? 0) > 0;
+                                const janelasDiferentes =
+                                  acompanhamento.inicioBase !==
+                                    acompanhamento.inicioAvaliacao ||
+                                  acompanhamento.fimBase !==
+                                    acompanhamento.fimAvaliacao;
+                                const duracoesIguais =
+                                  duracaoDias(
+                                    acompanhamento.inicioBase,
+                                    acompanhamento.fimBase
+                                  ) > 0 &&
+                                  duracaoDias(
+                                    acompanhamento.inicioBase,
+                                    acompanhamento.fimBase
+                                  ) ===
+                                    duracaoDias(
+                                      acompanhamento.inicioAvaliacao ?? '',
+                                      acompanhamento.fimAvaliacao ?? ''
+                                    );
+                                const comparacaoPossivel =
+                                  temAvaliacao &&
+                                  dadosSuficientes &&
+                                  janelasDiferentes &&
+                                  duracoesIguais;
+                                const variacao =
+                                  acompanhamento.resultadoAvaliacao ===
+                                  undefined
+                                    ? null
+                                    : acompanhamento.resultadoAvaliacao -
+                                      acompanhamento.resultadoBase;
+                                return (
+                                  <div
+                                    style={{
+                                      margin: '12px 0',
+                                      padding: '14px',
+                                      borderRadius: '10px',
+                                      background: '#f1f5f9',
+                                      lineHeight: 1.6,
+                                    }}
+                                  >
+                                    <strong>
+                                      Indicadores associados à decisão
+                                    </strong>
+                                    <p>Origem: {acompanhamento.origem}</p>
                                     <p>
-                                      Última avaliação (
-                                      {new Date(
-                                        acompanhamento.avaliadaEm
-                                      ).toLocaleString('pt-BR')}
-                                      ): receitas{' '}
+                                      Base ({acompanhamento.periodoBase}):
+                                      receitas{' '}
                                       {formatarValorFinanceiro(
-                                        acompanhamento.receitasAvaliacao ?? 0
+                                        acompanhamento.receitasBase
                                       )}
                                       , despesas{' '}
                                       {formatarValorFinanceiro(
-                                        acompanhamento.despesasAvaliacao ?? 0
+                                        acompanhamento.despesasBase
                                       )}
                                       , resultado{' '}
                                       {formatarValorFinanceiro(
-                                        acompanhamento.resultadoAvaliacao
+                                        acompanhamento.resultadoBase
                                       )}
-                                      .{' '}
-                                      {comparacaoPossivel
-                                        ? `Diferença observada: ${formatarValorFinanceiro(
-                                            variacao ?? 0
-                                          )}.`
-                                        : 'Diferença não apresentada como comparação válida.'}
+                                      .
                                     </p>
-                                  )}
-                                <p
-                                  style={{ fontSize: '12px', color: '#64748b' }}
-                                >
-                                  Comparação descritiva, não comprova que a
-                                  decisão causou a mudança. Confira se os
-                                  períodos e lançamentos são comparáveis.
-                                </p>
-                                {temAvaliacao && (
-                                  <p
-                                    style={{
-                                      fontSize: '12px',
-                                      color: comparacaoPossivel
-                                        ? '#166534'
-                                        : '#92400e',
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    {comparacaoPossivel
-                                      ? 'Comparação descritiva entre períodos de mesma duração e com lançamentos registrados. Não demonstra causalidade.'
-                                      : !dadosSuficientes
-                                      ? 'Comparação limitada: faltam lançamentos em uma das avaliações, ou a avaliação antiga não registrou a quantidade.'
-                                      : !janelasDiferentes
-                                      ? 'Mesma janela de datas: os valores podem refletir apenas novos lançamentos, não uma evolução entre períodos.'
-                                      : 'Períodos com durações diferentes: não é adequado comparar diretamente os totais.'}
-                                  </p>
-                                )}
-                                <p
-                                  style={{ fontSize: '12px', color: '#64748b' }}
-                                >
-                                  Base: {acompanhamento.inicioBase} a{' '}
-                                  {acompanhamento.fimBase}.
-                                  {acompanhamento.inicioAvaliacao &&
-                                    acompanhamento.fimAvaliacao &&
-                                    ` Avaliação: ${acompanhamento.inicioAvaliacao} a ${acompanhamento.fimAvaliacao}.`}
-                                </p>
+                                    {acompanhamento.avaliadaEm &&
+                                      acompanhamento.resultadoAvaliacao !==
+                                        undefined && (
+                                        <p>
+                                          Última avaliação (
+                                          {new Date(
+                                            acompanhamento.avaliadaEm
+                                          ).toLocaleString('pt-BR')}
+                                          ): receitas{' '}
+                                          {formatarValorFinanceiro(
+                                            acompanhamento.receitasAvaliacao ??
+                                              0
+                                          )}
+                                          , despesas{' '}
+                                          {formatarValorFinanceiro(
+                                            acompanhamento.despesasAvaliacao ??
+                                              0
+                                          )}
+                                          , resultado{' '}
+                                          {formatarValorFinanceiro(
+                                            acompanhamento.resultadoAvaliacao
+                                          )}
+                                          .{' '}
+                                          {comparacaoPossivel
+                                            ? `Diferença observada: ${formatarValorFinanceiro(
+                                                variacao ?? 0
+                                              )}.`
+                                            : 'Diferença não apresentada como comparação válida.'}
+                                        </p>
+                                      )}
+                                    <p
+                                      style={{
+                                        fontSize: '12px',
+                                        color: '#64748b',
+                                      }}
+                                    >
+                                      Comparação descritiva, não comprova que a
+                                      decisão causou a mudança. Confira se os
+                                      períodos e lançamentos são comparáveis.
+                                    </p>
+                                    {temAvaliacao && (
+                                      <p
+                                        style={{
+                                          fontSize: '12px',
+                                          color: comparacaoPossivel
+                                            ? '#166534'
+                                            : '#92400e',
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {comparacaoPossivel
+                                          ? 'Comparação descritiva entre períodos de mesma duração e com lançamentos registrados. Não demonstra causalidade.'
+                                          : !dadosSuficientes
+                                          ? 'Comparação limitada: faltam lançamentos em uma das avaliações, ou a avaliação antiga não registrou a quantidade.'
+                                          : !janelasDiferentes
+                                          ? 'Mesma janela de datas: os valores podem refletir apenas novos lançamentos, não uma evolução entre períodos.'
+                                          : 'Períodos com durações diferentes: não é adequado comparar diretamente os totais.'}
+                                      </p>
+                                    )}
+                                    <p
+                                      style={{
+                                        fontSize: '12px',
+                                        color: '#64748b',
+                                      }}
+                                    >
+                                      Base: {acompanhamento.inicioBase} a{' '}
+                                      {acompanhamento.fimBase}.
+                                      {acompanhamento.inicioAvaliacao &&
+                                        acompanhamento.fimAvaliacao &&
+                                        ` Avaliação: ${acompanhamento.inicioAvaliacao} a ${acompanhamento.fimAvaliacao}.`}
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => registrarAvaliacao(indice)}
+                                      style={{
+                                        padding: '9px 12px',
+                                        borderRadius: '8px',
+                                        background: '#214b58',
+                                        color: '#fff',
+                                        border: 0,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      Registrar avaliação do período selecionado
+                                    </button>
+                                  </div>
+                                );
+                              })()}
+
+                            <div
+                              style={{
+                                display: 'flex',
+                                gap: '8px',
+                                flexWrap: 'wrap',
+                                marginTop: '10px',
+                              }}
+                            >
+                              {(
+                                ['PENDENTE', 'POSITIVO', 'NEGATIVO'] as const
+                              ).map((resultado) => (
                                 <button
+                                  key={resultado}
                                   type="button"
-                                  onClick={() => registrarAvaliacao(indice)}
-                                  style={{
-                                    padding: '9px 12px',
-                                    borderRadius: '8px',
-                                    background: '#214b58',
-                                    color: '#fff',
-                                    border: 0,
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  Registrar avaliação do período selecionado
-                                </button>
-                              </div>
-                            );
-                          })()}
+                                  onClick={() => {
+                                    const acompanhamento =
+                                      acompanhamentos[String(indice)];
 
-                        <div
-                          style={{
-                            display: 'flex',
-                            gap: '8px',
-                            flexWrap: 'wrap',
-                            marginTop: '10px',
-                          }}
-                        >
-                          {(['PENDENTE', 'POSITIVO', 'NEGATIVO'] as const).map(
-                            (resultado) => (
-                              <button
-                                key={resultado}
-                                type="button"
-                                onClick={() => {
-                                  const acompanhamento =
-                                    acompanhamentos[String(indice)];
+                                    if (resultado !== 'PENDENTE') {
+                                      const temDados =
+                                        acompanhamento &&
+                                        (acompanhamento.quantidadeBase ?? 0) >
+                                          0 &&
+                                        (acompanhamento.quantidadeAvaliacao ??
+                                          0) > 0;
 
-                                  if (resultado !== 'PENDENTE') {
-                                    const temDados =
-                                      acompanhamento &&
-                                      (acompanhamento.quantidadeBase ?? 0) >
-                                        0 &&
-                                      (acompanhamento.quantidadeAvaliacao ??
-                                        0) > 0;
+                                      const periodoPosterior =
+                                        acompanhamento?.inicioAvaliacao &&
+                                        acompanhamento.inicioAvaliacao >
+                                          acompanhamento.fimBase;
 
-                                    const periodoPosterior =
-                                      acompanhamento?.inicioAvaliacao &&
-                                      acompanhamento.inicioAvaliacao >
-                                        acompanhamento.fimBase;
-
-                                    const duracao = (
-                                      inicio: string,
-                                      fim: string
-                                    ) => {
-                                      const a = Date.parse(
-                                        `${inicio}T12:00:00Z`
-                                      );
-                                      const b = Date.parse(`${fim}T12:00:00Z`);
-
-                                      return Number.isFinite(a) &&
-                                        Number.isFinite(b) &&
-                                        b >= a
-                                        ? Math.round((b - a) / 86400000) + 1
-                                        : 0;
-                                    };
-
-                                    const periodosComparaveis =
-                                      acompanhamento &&
-                                      duracao(
-                                        acompanhamento.inicioBase,
-                                        acompanhamento.fimBase
-                                      ) > 0 &&
-                                      duracao(
-                                        acompanhamento.inicioBase,
-                                        acompanhamento.fimBase
-                                      ) ===
-                                        duracao(
-                                          acompanhamento.inicioAvaliacao ?? '',
-                                          acompanhamento.fimAvaliacao ?? ''
+                                      const duracao = (
+                                        inicio: string,
+                                        fim: string
+                                      ) => {
+                                        const a = Date.parse(
+                                          `${inicio}T12:00:00Z`
+                                        );
+                                        const b = Date.parse(
+                                          `${fim}T12:00:00Z`
                                         );
 
-                                    if (
-                                      !temDados ||
-                                      !periodoPosterior ||
-                                      !periodosComparaveis
-                                    ) {
-                                      alert(
-                                        'Esta decisão ainda não possui uma avaliação financeira válida. Registre uma comparação entre períodos posteriores e equivalentes antes de classificá-la.'
-                                      );
-                                      return;
-                                    }
-                                  }
+                                        return Number.isFinite(a) &&
+                                          Number.isFinite(b) &&
+                                          b >= a
+                                          ? Math.round((b - a) / 86400000) + 1
+                                          : 0;
+                                      };
 
-                                  setResultadosDecisoes((anteriores) => ({
-                                    ...anteriores,
-                                    [String(indice)]: resultado,
-                                  }));
-                                }}
+                                      const periodosComparaveis =
+                                        acompanhamento &&
+                                        duracao(
+                                          acompanhamento.inicioBase,
+                                          acompanhamento.fimBase
+                                        ) > 0 &&
+                                        duracao(
+                                          acompanhamento.inicioBase,
+                                          acompanhamento.fimBase
+                                        ) ===
+                                          duracao(
+                                            acompanhamento.inicioAvaliacao ??
+                                              '',
+                                            acompanhamento.fimAvaliacao ?? ''
+                                          );
+
+                                      if (
+                                        !temDados ||
+                                        !periodoPosterior ||
+                                        !periodosComparaveis
+                                      ) {
+                                        alert(
+                                          'Esta decisão ainda não possui uma avaliação financeira válida. Registre uma comparação entre períodos posteriores e equivalentes antes de classificá-la.'
+                                        );
+                                        return;
+                                      }
+                                    }
+
+                                    setResultadosDecisoes((anteriores) => ({
+                                      ...anteriores,
+                                      [String(indice)]: resultado,
+                                    }));
+                                  }}
+                                  style={{
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid #dce4ef',
+                                    cursor: 'pointer',
+                                    background:
+                                      resultadosDecisoes[String(indice)] ===
+                                      resultado
+                                        ? '#214b58'
+                                        : '#ffffff',
+                                    color:
+                                      resultadosDecisoes[String(indice)] ===
+                                      resultado
+                                        ? '#ffffff'
+                                        : '#214b58',
+                                  }}
+                                >
+                                  {resultado === 'PENDENTE'
+                                    ? 'Pendente'
+                                    : resultado === 'POSITIVO'
+                                    ? 'Positivo'
+                                    : 'Negativo'}
+                                </button>
+                              ))}
+                            </div>
+                            <div style={{ marginTop: '16px' }}>
+                              <label
+                                htmlFor={`impacto-${indice}`}
                                 style={{
-                                  padding: '8px 12px',
-                                  borderRadius: '8px',
-                                  border: '1px solid #dce4ef',
-                                  cursor: 'pointer',
-                                  background:
-                                    resultadosDecisoes[String(indice)] ===
-                                    resultado
-                                      ? '#214b58'
-                                      : '#ffffff',
-                                  color:
-                                    resultadosDecisoes[String(indice)] ===
-                                    resultado
-                                      ? '#ffffff'
-                                      : '#214b58',
+                                  display: 'block',
+                                  marginBottom: '8px',
+                                  fontWeight: 600,
                                 }}
                               >
-                                {resultado === 'PENDENTE'
-                                  ? 'Pendente'
-                                  : resultado === 'POSITIVO'
-                                  ? 'Positivo'
-                                  : 'Negativo'}
-                              </button>
-                            )
-                          )}
+                                Impacto financeiro (R$)
+                              </label>
+
+                              <input
+                                id={`impacto-${indice}`}
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                placeholder="Ex.: 1500,00"
+                                value={impactosDecisoes[String(indice)] ?? ''}
+                                onChange={(evento) => {
+                                  const valor = evento.target.value;
+
+                                  setImpactosDecisoes((anteriores) => {
+                                    const atualizados = { ...anteriores };
+
+                                    if (valor === '') {
+                                      delete atualizados[String(indice)];
+                                    } else {
+                                      const numero = Number(valor);
+
+                                      if (
+                                        Number.isFinite(numero) &&
+                                        numero >= 0
+                                      ) {
+                                        atualizados[String(indice)] = numero;
+                                      }
+                                    }
+
+                                    return atualizados;
+                                  });
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '12px',
+                                  border: '1px solid #dce4ef',
+                                  borderRadius: '10px',
+                                }}
+                              />
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ marginTop: '16px' }}>
-                          <label
-                            htmlFor={`impacto-${indice}`}
-                            style={{
-                              display: 'block',
-                              marginBottom: '8px',
-                              fontWeight: 600,
-                            }}
-                          >
-                            Impacto financeiro (R$)
-                          </label>
-
-                          <input
-                            id={`impacto-${indice}`}
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="Ex.: 1500,00"
-                            value={impactosDecisoes[String(indice)] ?? ''}
-                            onChange={(evento) => {
-                              const valor = evento.target.value;
-
-                              setImpactosDecisoes((anteriores) => {
-                                const atualizados = { ...anteriores };
-
-                                if (valor === '') {
-                                  delete atualizados[String(indice)];
-                                } else {
-                                  const numero = Number(valor);
-
-                                  if (Number.isFinite(numero) && numero >= 0) {
-                                    atualizados[String(indice)] = numero;
-                                  }
-                                }
-
-                                return atualizados;
-                              });
-                            }}
-                            style={{
-                              width: '100%',
-                              padding: '12px',
-                              border: '1px solid #dce4ef',
-                              borderRadius: '10px',
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                ))}
+                      </article>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            </details>
           </section>
         )}
 
@@ -3830,12 +3559,12 @@ function App() {
           </section>
         )}
 
-        {secao === 'Dados financeiros' && (
+        {secao === 'Fontes de dados' && (
           <section className="painel">
             <div className="painel-cabecalho">
               <div>
-                <p className="sobretitulo">DADOS DA EMPRESA</p>
-                <h2>Lançamentos financeiros</h2>
+                <p className="sobretitulo">FONTES DA INTELIGÊNCIA</p>
+                <h2>Importe os dados da sua empresa</h2>
               </div>
               <span className="contador">
                 {lancamentosEmpresa.length} lançamentos
@@ -3843,94 +3572,9 @@ function App() {
             </div>
 
             <p className="subtitulo">
-              Registre receitas e despesas para acompanhar a situação financeira
-              da empresa. Os totais abaixo consideram todos os lançamentos
-              cadastrados.
-            </p>
-
-            {/* MARCO 11 — RESUMO FINANCEIRO AUTOMÁTICO */}
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                gap: '16px',
-                marginTop: '24px',
-                marginBottom: '20px',
-              }}
-            >
-              <div
-                style={{
-                  padding: '20px',
-                  borderRadius: '14px',
-                  background: '#ecfdf5',
-                  border: '1px solid #bbf7d0',
-                }}
-              >
-                <p style={{ margin: '0 0 10px', color: '#166534' }}>
-                  Total de receitas
-                </p>
-                <strong style={{ fontSize: '24px', color: '#166534' }}>
-                  {formatarValorFinanceiro(totalReceitas)}
-                </strong>
-              </div>
-
-              <div
-                style={{
-                  padding: '20px',
-                  borderRadius: '14px',
-                  background: '#fef2f2',
-                  border: '1px solid #fecaca',
-                }}
-              >
-                <p style={{ margin: '0 0 10px', color: '#991b1b' }}>
-                  Total de despesas
-                </p>
-                <strong style={{ fontSize: '24px', color: '#991b1b' }}>
-                  {formatarValorFinanceiro(totalDespesas)}
-                </strong>
-              </div>
-
-              <div
-                style={{
-                  padding: '20px',
-                  borderRadius: '14px',
-                  background: '#eff6ff',
-                  border: '1px solid #bfdbfe',
-                }}
-              >
-                <p style={{ margin: '0 0 10px', color: '#1e40af' }}>
-                  Saldo financeiro
-                </p>
-                <strong
-                  style={{
-                    fontSize: '24px',
-                    color: saldoFinanceiro < 0 ? '#b91c1c' : '#1e40af',
-                  }}
-                >
-                  {formatarValorFinanceiro(saldoFinanceiro)}
-                </strong>
-              </div>
-            </div>
-
-            <p
-              style={{
-                fontWeight: 700,
-                marginBottom: '24px',
-                color:
-                  situacaoFinanceira === 'POSITIVO'
-                    ? '#166534'
-                    : situacaoFinanceira === 'NEGATIVO'
-                    ? '#b91c1c'
-                    : '#64748b',
-              }}
-            >
-              Situação financeira:{' '}
-              {situacaoFinanceira === 'POSITIVO'
-                ? 'Saldo positivo'
-                : situacaoFinanceira === 'NEGATIVO'
-                ? 'Saldo negativo'
-                : 'Saldo zerado'}
+              Utilize os arquivos exportados do sistema que sua empresa já usa.
+              O PREVANZIA analisa esses registros sem exigir que você refaça a
+              gestão financeira aqui.
             </p>
 
             {/* FASE 4 — IMPORTAÇÃO DE ARQUIVOS CSV */}
@@ -4223,268 +3867,412 @@ function App() {
               )}
             </div>
 
-            <form
-              onSubmit={(evento) => {
-                evento.preventDefault();
-
-                const descricao = descricaoLancamento.trim();
-                const categoria = categoriaLancamento.trim();
-                const valor = Number(valorLancamento.replace(',', '.'));
-
-                if (
-                  !descricao ||
-                  !categoria ||
-                  !dataLancamento ||
-                  !Number.isFinite(valor) ||
-                  valor <= 0
-                ) {
-                  alert('Preencha todos os campos com valores válidos.');
-                  return;
-                }
-
-                const novoLancamento: LancamentoFinanceiro = {
-                  id: crypto.randomUUID(),
-                  empresaId: empresaIdAtual,
-                  data: dataLancamento,
-                  descricao,
-                  categoria,
-                  tipo: tipoLancamento,
-                  valor,
-                };
-
-                adicionarLancamentoFinanceiro(novoLancamento);
-
-                setDescricaoLancamento('');
-                setCategoriaLancamento('');
-                setValorLancamento('');
-              }}
+            <details
               style={{
-                display: 'grid',
-                gap: '14px',
-                marginTop: '24px',
-                marginBottom: '28px',
+                marginTop: '20px',
+                borderTop: '1px solid #e2e8f0',
+                paddingTop: '18px',
               }}
             >
-              <label>
-                Descrição
-                <input
-                  type="text"
-                  required
-                  value={descricaoLancamento}
-                  onChange={(evento) =>
-                    setDescricaoLancamento(evento.target.value)
-                  }
-                  placeholder="Ex.: Lavagem de veículo"
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '12px',
-                    marginTop: '6px',
-                    border: '1px solid #dce4ef',
-                    borderRadius: '10px',
-                  }}
-                />
-              </label>
+              <summary
+                style={{ cursor: 'pointer', fontWeight: 600, color: '#214b58' }}
+              >
+                Consultar lançamentos e indicadores importados (opcional)
+              </summary>
+              <div style={{ marginTop: '18px' }}>
+                {/* MARCO 11 — RESUMO FINANCEIRO AUTOMÁTICO */}
 
-              <label>
-                Tipo de lançamento
-                <select
-                  value={tipoLancamento}
-                  onChange={(evento) =>
-                    setTipoLancamento(
-                      evento.target.value as 'RECEITA' | 'DESPESA'
-                    )
-                  }
+                <div
                   style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '12px',
-                    marginTop: '6px',
-                    border: '1px solid #dce4ef',
-                    borderRadius: '10px',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: '16px',
+                    marginTop: '24px',
+                    marginBottom: '20px',
                   }}
                 >
-                  <option value="RECEITA">Receita</option>
-                  <option value="DESPESA">Despesa</option>
-                </select>
-              </label>
-
-              <label>
-                Categoria
-                <input
-                  type="text"
-                  required
-                  value={categoriaLancamento}
-                  onChange={(evento) =>
-                    setCategoriaLancamento(evento.target.value)
-                  }
-                  placeholder="Ex.: Serviços, vendas, combustível"
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '12px',
-                    marginTop: '6px',
-                    border: '1px solid #dce4ef',
-                    borderRadius: '10px',
-                  }}
-                />
-              </label>
-
-              <label>
-                Valor (R$)
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  required
-                  value={valorLancamento}
-                  onChange={(evento) => setValorLancamento(evento.target.value)}
-                  placeholder="Ex.: 1500.00"
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '12px',
-                    marginTop: '6px',
-                    border: '1px solid #dce4ef',
-                    borderRadius: '10px',
-                  }}
-                />
-              </label>
-
-              <label>
-                Data
-                <input
-                  type="date"
-                  required
-                  value={dataLancamento}
-                  onChange={(evento) => setDataLancamento(evento.target.value)}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '12px',
-                    marginTop: '6px',
-                    border: '1px solid #dce4ef',
-                    borderRadius: '10px',
-                  }}
-                />
-              </label>
-
-              <button
-                type="submit"
-                style={{
-                  background: '#214b58',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '10px',
-                  padding: '14px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                Registrar lançamento
-              </button>
-            </form>
-
-            <h3>Histórico financeiro</h3>
-
-            {lancamentosEmpresa.length === 0 ? (
-              <p className="subtitulo">
-                Nenhum lançamento financeiro cadastrado.
-              </p>
-            ) : (
-              <div style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
-                {lancamentosEmpresa.map((lancamento) => (
-                  <article
-                    key={`${lancamento.empresaId}-${lancamento.id}`}
+                  <div
                     style={{
-                      padding: '16px',
-                      borderRadius: '12px',
-                      background:
-                        lancamento.tipo === 'RECEITA' ? '#ecfdf5' : '#fef2f2',
+                      padding: '20px',
+                      borderRadius: '14px',
+                      background: '#ecfdf5',
+                      border: '1px solid #bbf7d0',
                     }}
                   >
-                    <strong>{lancamento.descricao}</strong>
-
-                    <p style={{ margin: '8px 0' }}>
-                      {lancamento.tipo === 'RECEITA' ? 'Receita' : 'Despesa'}
-                      {' • '}
-                      {lancamento.categoria}
+                    <p style={{ margin: '0 0 10px', color: '#166534' }}>
+                      Total de receitas
                     </p>
+                    <strong style={{ fontSize: '24px', color: '#166534' }}>
+                      {formatarValorFinanceiro(totalReceitas)}
+                    </strong>
+                  </div>
 
-                    <p style={{ margin: '8px 0' }}>
-                      Data: {lancamento.data.split('-').reverse().join('/')}
+                  <div
+                    style={{
+                      padding: '20px',
+                      borderRadius: '14px',
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                    }}
+                  >
+                    <p style={{ margin: '0 0 10px', color: '#991b1b' }}>
+                      Total de despesas
                     </p>
+                    <strong style={{ fontSize: '24px', color: '#991b1b' }}>
+                      {formatarValorFinanceiro(totalDespesas)}
+                    </strong>
+                  </div>
 
-                    <p
-                      style={{
-                        margin: '8px 0',
-                        fontSize: '13px',
-                        color: '#475569',
-                      }}
-                    >
-                      Origem:{' '}
-                      {lancamento.origem === 'CSV'
-                        ? 'Arquivo CSV'
-                        : lancamento.origem === 'EXCEL'
-                        ? 'Arquivo Excel'
-                        : lancamento.origem === 'API'
-                        ? 'Sistema integrado'
-                        : 'Lançamento manual'}
+                  <div
+                    style={{
+                      padding: '20px',
+                      borderRadius: '14px',
+                      background: '#eff6ff',
+                      border: '1px solid #bfdbfe',
+                    }}
+                  >
+                    <p style={{ margin: '0 0 10px', color: '#1e40af' }}>
+                      Saldo financeiro
                     </p>
-
-                    {lancamento.arquivoOrigem && (
-                      <p
-                        style={{
-                          margin: '8px 0',
-                          fontSize: '13px',
-                          color: '#475569',
-                          overflowWrap: 'anywhere',
-                        }}
-                      >
-                        Arquivo: {lancamento.arquivoOrigem}
-                      </p>
-                    )}
-
-                    {lancamento.importadoEm && (
-                      <p
-                        style={{
-                          margin: '8px 0',
-                          fontSize: '13px',
-                          color: '#475569',
-                        }}
-                      >
-                        Importado em:{' '}
-                        {new Date(lancamento.importadoEm).toLocaleString(
-                          'pt-BR',
-                          {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          }
-                        )}
-                      </p>
-                    )}
-
                     <strong
                       style={{
-                        color:
-                          lancamento.tipo === 'RECEITA' ? '#166534' : '#b91c1c',
+                        fontSize: '24px',
+                        color: saldoFinanceiro < 0 ? '#b91c1c' : '#1e40af',
                       }}
                     >
-                      {lancamento.valor.toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      })}
+                      {formatarValorFinanceiro(saldoFinanceiro)}
                     </strong>
-                  </article>
-                ))}
+                  </div>
+                </div>
+
+                <p
+                  style={{
+                    fontWeight: 700,
+                    marginBottom: '24px',
+                    color:
+                      situacaoFinanceira === 'POSITIVO'
+                        ? '#166534'
+                        : situacaoFinanceira === 'NEGATIVO'
+                        ? '#b91c1c'
+                        : '#64748b',
+                  }}
+                >
+                  Situação financeira:{' '}
+                  {situacaoFinanceira === 'POSITIVO'
+                    ? 'Saldo positivo'
+                    : situacaoFinanceira === 'NEGATIVO'
+                    ? 'Saldo negativo'
+                    : 'Saldo zerado'}
+                </p>
+
+                <details style={{ marginTop: '20px' }}>
+                  <summary
+                    style={{
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      color: '#214b58',
+                    }}
+                  >
+                    Registrar lançamento manualmente (uso excepcional)
+                  </summary>
+                  <div style={{ marginTop: '12px' }}>
+                    <form
+                      onSubmit={(evento) => {
+                        evento.preventDefault();
+
+                        // FASE 7 — Impede gravações sem empresa autorizada.
+                        if (
+                          !usuarioAtual ||
+                          empresaIdAtual === 'empresa_demo' ||
+                          !empresasCadastradas.some(
+                            (empresa) =>
+                              empresa.id === empresaIdAtual &&
+                              empresa.proprietarioUid === usuarioAtual.uid
+                          ) ||
+                          !lancamentosCarregados ||
+                          uidLancamentos !== usuarioAtual.uid
+                        ) {
+                          alert(
+                            'Selecione uma empresa cadastrada e aguarde a sincronização antes de registrar lançamentos.'
+                          );
+                          return;
+                        }
+
+                        const descricao = descricaoLancamento.trim();
+                        const categoria = categoriaLancamento.trim();
+                        const valor = Number(valorLancamento.replace(',', '.'));
+
+                        if (
+                          !descricao ||
+                          !categoria ||
+                          !dataLancamento ||
+                          !Number.isFinite(valor) ||
+                          valor <= 0
+                        ) {
+                          alert(
+                            'Preencha todos os campos com valores válidos.'
+                          );
+                          return;
+                        }
+
+                        const novoLancamento: LancamentoFinanceiro = {
+                          id: crypto.randomUUID(),
+                          empresaId: empresaIdAtual,
+                          data: dataLancamento,
+                          descricao,
+                          categoria,
+                          tipo: tipoLancamento,
+                          valor,
+                        };
+
+                        adicionarLancamentoFinanceiro(novoLancamento);
+
+                        setDescricaoLancamento('');
+                        setCategoriaLancamento('');
+                        setValorLancamento('');
+                      }}
+                      style={{
+                        display: 'grid',
+                        gap: '14px',
+                        marginTop: '24px',
+                        marginBottom: '28px',
+                      }}
+                    >
+                      <label>
+                        Descrição
+                        <input
+                          type="text"
+                          required
+                          value={descricaoLancamento}
+                          onChange={(evento) =>
+                            setDescricaoLancamento(evento.target.value)
+                          }
+                          placeholder="Ex.: Lavagem de veículo"
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '12px',
+                            marginTop: '6px',
+                            border: '1px solid #dce4ef',
+                            borderRadius: '10px',
+                          }}
+                        />
+                      </label>
+
+                      <label>
+                        Tipo de lançamento
+                        <select
+                          value={tipoLancamento}
+                          onChange={(evento) =>
+                            setTipoLancamento(
+                              evento.target.value as 'RECEITA' | 'DESPESA'
+                            )
+                          }
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            padding: '12px',
+                            marginTop: '6px',
+                            border: '1px solid #dce4ef',
+                            borderRadius: '10px',
+                          }}
+                        >
+                          <option value="RECEITA">Receita</option>
+                          <option value="DESPESA">Despesa</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        Categoria
+                        <input
+                          type="text"
+                          required
+                          value={categoriaLancamento}
+                          onChange={(evento) =>
+                            setCategoriaLancamento(evento.target.value)
+                          }
+                          placeholder="Ex.: Serviços, vendas, combustível"
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '12px',
+                            marginTop: '6px',
+                            border: '1px solid #dce4ef',
+                            borderRadius: '10px',
+                          }}
+                        />
+                      </label>
+
+                      <label>
+                        Valor (R$)
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          required
+                          value={valorLancamento}
+                          onChange={(evento) =>
+                            setValorLancamento(evento.target.value)
+                          }
+                          placeholder="Ex.: 1500.00"
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '12px',
+                            marginTop: '6px',
+                            border: '1px solid #dce4ef',
+                            borderRadius: '10px',
+                          }}
+                        />
+                      </label>
+
+                      <label>
+                        Data
+                        <input
+                          type="date"
+                          required
+                          value={dataLancamento}
+                          onChange={(evento) =>
+                            setDataLancamento(evento.target.value)
+                          }
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '12px',
+                            marginTop: '6px',
+                            border: '1px solid #dce4ef',
+                            borderRadius: '10px',
+                          }}
+                        />
+                      </label>
+
+                      <button
+                        type="submit"
+                        style={{
+                          background: '#214b58',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '10px',
+                          padding: '14px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Registrar lançamento
+                      </button>
+                    </form>
+                  </div>
+                </details>
+                <h3>Histórico financeiro</h3>
+
+                {lancamentosEmpresa.length === 0 ? (
+                  <p className="subtitulo">
+                    Nenhum lançamento financeiro cadastrado.
+                  </p>
+                ) : (
+                  <div
+                    style={{ display: 'grid', gap: '12px', marginTop: '16px' }}
+                  >
+                    {lancamentosEmpresa.map((lancamento) => (
+                      <article
+                        key={`${lancamento.empresaId}-${lancamento.id}`}
+                        style={{
+                          padding: '16px',
+                          borderRadius: '12px',
+                          background:
+                            lancamento.tipo === 'RECEITA'
+                              ? '#ecfdf5'
+                              : '#fef2f2',
+                        }}
+                      >
+                        <strong>{lancamento.descricao}</strong>
+
+                        <p style={{ margin: '8px 0' }}>
+                          {lancamento.tipo === 'RECEITA'
+                            ? 'Receita'
+                            : 'Despesa'}
+                          {' • '}
+                          {lancamento.categoria}
+                        </p>
+
+                        <p style={{ margin: '8px 0' }}>
+                          Data: {lancamento.data.split('-').reverse().join('/')}
+                        </p>
+
+                        <p
+                          style={{
+                            margin: '8px 0',
+                            fontSize: '13px',
+                            color: '#475569',
+                          }}
+                        >
+                          Origem:{' '}
+                          {lancamento.origem === 'CSV'
+                            ? 'Arquivo CSV'
+                            : lancamento.origem === 'EXCEL'
+                            ? 'Arquivo Excel'
+                            : lancamento.origem === 'API'
+                            ? 'Sistema integrado'
+                            : 'Lançamento manual'}
+                        </p>
+
+                        {lancamento.arquivoOrigem && (
+                          <p
+                            style={{
+                              margin: '8px 0',
+                              fontSize: '13px',
+                              color: '#475569',
+                              overflowWrap: 'anywhere',
+                            }}
+                          >
+                            Arquivo: {lancamento.arquivoOrigem}
+                          </p>
+                        )}
+
+                        {lancamento.importadoEm && (
+                          <p
+                            style={{
+                              margin: '8px 0',
+                              fontSize: '13px',
+                              color: '#475569',
+                            }}
+                          >
+                            Importado em:{' '}
+                            {new Date(lancamento.importadoEm).toLocaleString(
+                              'pt-BR',
+                              {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              }
+                            )}
+                          </p>
+                        )}
+
+                        <strong
+                          style={{
+                            color:
+                              lancamento.tipo === 'RECEITA'
+                                ? '#166534'
+                                : '#b91c1c',
+                          }}
+                        >
+                          {lancamento.valor.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </strong>
+                      </article>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            </details>
           </section>
         )}
 

@@ -9,6 +9,7 @@ import {
   getDoc,
   onSnapshot,
   setDoc,
+  runTransaction,
   query,
   where,
 } from 'firebase/firestore';
@@ -1907,6 +1908,24 @@ function App() {
     Record<string, number>
   >({});
 
+  // FASE 7 — Serialização estável para comparar snapshots do Firestore.
+  // A ordem das chaves de objetos não altera a equivalência dos dados.
+  const serializarDecisoesEstavel = (valor: unknown): string => {
+    const normalizar = (item: unknown): unknown => {
+      if (Array.isArray(item)) return item.map(normalizar);
+      if (item !== null && typeof item === 'object') {
+        return Object.fromEntries(
+          Object.entries(item as Record<string, unknown>)
+            .filter(([, conteudo]) => conteudo !== undefined)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([chave, conteudo]) => [chave, normalizar(conteudo)])
+        );
+      }
+      return item;
+    };
+    return JSON.stringify(normalizar(valor));
+  };
+
   // FASE 7 — Decisões isoladas por empresa. O documento antigo é preservado.
   const [chaveDecisoesCarregada, setChaveDecisoesCarregada] = useState<
     string | null
@@ -1991,7 +2010,7 @@ function App() {
 
     const aplicar = (pacote: ReturnType<typeof validarPacote>) => {
       if (!ativo || chaveDecisoesRef.current !== chave) return;
-      ultimoPacoteDecisoes.current = JSON.stringify(pacote);
+      ultimoPacoteDecisoes.current = serializarDecisoesEstavel(pacote);
       setDecisoes(pacote.decisoes);
       setAcompanhamentos(pacote.acompanhamentos);
       setResultadosDecisoes(pacote.resultados);
@@ -2075,23 +2094,46 @@ function App() {
     };
   }, [usuarioAtual, empresaIdAtual, empresasCadastradas]);
 
+  // FASE 7 — Evita gravações concorrentes e detecta edição em outro dispositivo.
+  const [revisaoSalvamentoDecisoes, setRevisaoSalvamentoDecisoes] = useState(0);
+  const salvamentoDecisoesEmAndamento = useRef(false);
+  const bloqueioConflitoDecisoes = useRef(false);
+
+  useEffect(() => {
+    // Um conflito precisa ser resolvido antes de permitir novos envios.
+    bloqueioConflitoDecisoes.current = false;
+    salvamentoDecisoesEmAndamento.current = false;
+  }, [usuarioAtual?.uid, empresaIdAtual]);
+
   useEffect(() => {
     if (!usuarioAtual || empresaIdAtual === 'empresa_demo') return;
     const chave = `${usuarioAtual.uid}:${empresaIdAtual}`;
     if (chaveDecisoesCarregada !== chave || chaveDecisoesRef.current !== chave)
       return;
+    if (bloqueioConflitoDecisoes.current) return;
+
     const pacote = {
       decisoes,
       acompanhamentos,
       resultados: resultadosDecisoes,
       impactos: impactosDecisoes,
     };
-    const serializado = JSON.stringify(pacote);
+    const serializado = serializarDecisoesEstavel(pacote);
     if (serializado === ultimoPacoteDecisoes.current) return;
-    ultimoPacoteDecisoes.current = serializado;
-    envioDecisoesPendente.current = true;
-    setDoc(
-      doc(
+
+    // Agrupa alterações do mesmo clique (decisão + acompanhamento).
+    const temporizador = window.setTimeout(async () => {
+      if (
+        chaveDecisoesRef.current !== chave ||
+        bloqueioConflitoDecisoes.current ||
+        salvamentoDecisoesEmAndamento.current
+      )
+        return;
+
+      salvamentoDecisoesEmAndamento.current = true;
+      envioDecisoesPendente.current = true;
+      const base = ultimoPacoteDecisoes.current;
+      const referencia = doc(
         db,
         'usuarios',
         usuarioAtual.uid,
@@ -2099,17 +2141,58 @@ function App() {
         empresaIdAtual,
         'configuracoes',
         'decisoes'
-      ),
-      pacote
-    )
-      .catch((erro) => {
+      );
+      try {
+        await runTransaction(db, async (transacao) => {
+          const remoto = await transacao.get(referencia);
+          // Se outro dispositivo alterou o documento, não sobrescrever.
+          const dadosRemotos = remoto.exists() ? remoto.data() : null;
+          const remotoSerializado = dadosRemotos
+            ? serializarDecisoesEstavel({
+                decisoes: dadosRemotos.decisoes ?? [],
+                acompanhamentos: dadosRemotos.acompanhamentos ?? {},
+                resultados: dadosRemotos.resultados ?? {},
+                impactos: dadosRemotos.impactos ?? {},
+              })
+            : '';
+          if (remotoSerializado !== base) {
+            throw new Error('CONFLITO_DECISOES');
+          }
+          transacao.set(referencia, pacote);
+        });
+        if (chaveDecisoesRef.current === chave) {
+          ultimoPacoteDecisoes.current = serializado;
+        }
+      } catch (erro) {
         console.error('Falha ao salvar decisões da empresa:', erro);
-        ultimoPacoteDecisoes.current = '';
-        alert('Não foi possível salvar a decisão. Confira sua conexão.');
-      })
-      .finally(() => {
+        if (chaveDecisoesRef.current === chave) {
+          bloqueioConflitoDecisoes.current = true;
+          if (erro instanceof Error && erro.message === 'CONFLITO_DECISOES') {
+            alert(
+              'As decisões foram alteradas em outro dispositivo. ' +
+                'Sua alteração NÃO foi sobrescrita na nuvem. ' +
+                'Não feche esta aba; confira as decisões antes de atualizar.'
+            );
+          } else {
+            alert(
+              'Não foi possível salvar as decisões. ' +
+                'Não feche esta aba até verificar a conexão.'
+            );
+          }
+        }
+      } finally {
+        salvamentoDecisoesEmAndamento.current = false;
         envioDecisoesPendente.current = false;
-      });
+        if (
+          chaveDecisoesRef.current === chave &&
+          !bloqueioConflitoDecisoes.current
+        ) {
+          setRevisaoSalvamentoDecisoes((valor) => valor + 1);
+        }
+      }
+    }, 400);
+
+    return () => window.clearTimeout(temporizador);
   }, [
     usuarioAtual,
     empresaIdAtual,
@@ -2118,6 +2201,7 @@ function App() {
     acompanhamentos,
     resultadosDecisoes,
     impactosDecisoes,
+    revisaoSalvamentoDecisoes,
   ]);
 
   // Valores informados pelo usuário, não ganhos causalmente comprovados.

@@ -26,6 +26,7 @@ type LancamentoFinanceiro = {
   importadoEm?: string;
   arquivoOrigem?: string;
   importacaoId?: string;
+  sistemaOrigem?: string;
 };
 
 // FASE 3 — MODELO UNIVERSAL DE DADOS
@@ -35,6 +36,7 @@ type HistoricoImportacao = {
   empresaId: string;
   nomeArquivo: string;
   importadoEm: string;
+  sistemaOrigem?: string;
   novos: number;
   duplicados: number;
   totalRegistros: number;
@@ -906,6 +908,10 @@ function App() {
   const [arquivoPendenteCSV, setArquivoPendenteCSV] = useState<File | null>(
     null
   );
+
+  // COLE O CÓDIGO NOVO AQUI
+  const [sistemaOrigemImportacao, setSistemaOrigemImportacao] =
+    useState<string>('');
   const [colunasPendentesCSV, setColunasPendentesCSV] = useState<string[]>([]);
   const [mapaCSV, setMapaCSV] = useState<Record<CampoCSV, string>>({
     data: '',
@@ -1461,7 +1467,6 @@ function App() {
           alert(`Linha ${i + 1}: dados inválidos. Importação cancelada.`);
           return;
         }
-
         const registro: LancamentoFinanceiro = {
           id: crypto.randomUUID(),
           empresaId: empresaIdAtual,
@@ -1474,6 +1479,9 @@ function App() {
           importadoEm,
           arquivoOrigem: arquivo.name,
           importacaoId,
+
+          // COLE O CÓDIGO NOVO AQUI
+          sistemaOrigem: sistemaOrigemImportacao.trim() || 'ARQUIVO IMPORTADO',
         };
 
         const chave = chaveRegistro(registro);
@@ -1490,6 +1498,7 @@ function App() {
       // Registra também tentativas válidas em que todos os itens eram duplicados.
       const eventoImportacao: HistoricoImportacao = {
         id: importacaoId,
+        sistemaOrigem: sistemaOrigemImportacao.trim() || 'ARQUIVO IMPORTADO',
         // COLE O CÓDIGO NOVO AQUI
         empresaId: empresaIdAtual,
         nomeArquivo: arquivo.name,
@@ -1552,7 +1561,7 @@ function App() {
       valorCentavos: Math.round(lancamento.valor * 100),
       moeda: 'BRL',
       origem: {
-        sistema: 'PREVANZIA',
+        sistema: lancamento.sistemaOrigem ?? 'PREVANZIA',
         tipo: lancamento.origem ?? 'MANUAL',
         importadoEm: lancamento.importadoEm ?? '',
         identificadorExterno: lancamento.id,
@@ -3720,6 +3729,32 @@ function App() {
                   ↑ Selecionar arquivo
                 </label>
 
+                {/* COLE O CÓDIGO NOVO AQUI — identificação do ERP */}
+                <div style={{ marginTop: '14px' }}>
+                  <label
+                    htmlFor="sistema-origem-prevanzia"
+                    style={{ display: 'block', marginBottom: '6px' }}
+                  >
+                    Sistema de origem dos dados
+                  </label>
+
+                  <input
+                    id="sistema-origem-prevanzia"
+                    type="text"
+                    placeholder="Ex.: Omie, Bling ou outro ERP"
+                    value={sistemaOrigemImportacao}
+                    onChange={(evento) =>
+                      setSistemaOrigemImportacao(evento.target.value)
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
                 {/* COLE O CÓDIGO NOVO AQUI — input oculto, mantendo a importação */}
                 <input
                   id="arquivo-csv-prevanzia"
@@ -3926,6 +3961,14 @@ function App() {
                         <p style={{ margin: '6px 0', fontSize: '13px' }}>
                           Importado em:{' '}
                           {new Date(item.importadoEm).toLocaleString('pt-BR')}
+                        </p>
+
+                        {/* COLE O CÓDIGO NOVO AQUI */}
+                        <p style={{ margin: '6px 0', fontSize: '13px' }}>
+                          Sistema de origem:{' '}
+                          <strong>
+                            {item.sistemaOrigem || 'Não informado'}
+                          </strong>
                         </p>
                         <p style={{ margin: '6px 0', fontSize: '13px' }}>
                           {item.totalRegistros} registro(s) no arquivo •{' '}

@@ -921,6 +921,8 @@ function App() {
       .toLowerCase();
 
     const sistemas = [
+      { nome: 'Sara Negócios', identificador: 'sara negocios' },
+{ nome: 'Organiza Fácil', identificador: 'organiza facil' },
       { nome: 'Omie', identificador: 'omie' },
       { nome: 'Bling', identificador: 'bling' },
       { nome: 'Conta Azul', identificador: 'conta azul' },

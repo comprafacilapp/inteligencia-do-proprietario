@@ -913,6 +913,32 @@ function App() {
   const [sistemaOrigemImportacao, setSistemaOrigemImportacao] =
     useState<string>('');
   const [colunasPendentesCSV, setColunasPendentesCSV] = useState<string[]>([]);
+  // COLE O CÓDIGO NOVO AQUI — identificação automática do ERP
+  function identificarSistemaOrigem(nomeArquivo: string): string {
+    const nome = nomeArquivo
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    const sistemas = [
+      { nome: 'Omie', identificador: 'omie' },
+      { nome: 'Bling', identificador: 'bling' },
+      { nome: 'Conta Azul', identificador: 'conta azul' },
+      { nome: 'Tiny', identificador: 'tiny' },
+    ];
+
+    const encontrado = sistemas.find((sistema) => {
+      const expressao = new RegExp(
+        `(^|[^a-z0-9])${sistema.identificador.replace(
+          / /g,
+          '[ _-]+'
+        )}([^a-z0-9]|$)`
+      );
+      return expressao.test(nome);
+    });
+
+    return encontrado?.nome ?? '';
+  }
   const [mapaCSV, setMapaCSV] = useState<Record<CampoCSV, string>>({
     data: '',
     descricao: '',
@@ -1033,12 +1059,18 @@ function App() {
   // FASE 4 — IMPORTAÇÃO DE DADOS FINANCEIROS POR CSV
 
   // FASE 4 — IMPORTAÇÃO CSV COM VALIDAÇÃO E PROTEÇÃO CONTRA DUPLICAÇÃO
-
   async function importarArquivoCSV(
     arquivo: File,
     mapaConfirmado?: Record<CampoCSV, string>,
     linhasExcel?: string[][]
   ) {
+    // Prioriza a origem preenchida manualmente; caso esteja vazia,
+    // identifica pelo nome do arquivo, sem modificar registros antigos.
+    const sistemaOrigemEfetivo =
+      sistemaOrigemImportacao.trim() ||
+      identificarSistemaOrigem(arquivo.name) ||
+      'ARQUIVO IMPORTADO';
+
     if (
       !usuarioAtual ||
       uidHistoricoCarregado !== usuarioAtual.uid ||
@@ -1481,7 +1513,7 @@ function App() {
           importacaoId,
 
           // COLE O CÓDIGO NOVO AQUI
-          sistemaOrigem: sistemaOrigemImportacao.trim() || 'ARQUIVO IMPORTADO',
+          sistemaOrigem: sistemaOrigemEfetivo,
         };
 
         const chave = chaveRegistro(registro);
@@ -1498,7 +1530,7 @@ function App() {
       // Registra também tentativas válidas em que todos os itens eram duplicados.
       const eventoImportacao: HistoricoImportacao = {
         id: importacaoId,
-        sistemaOrigem: sistemaOrigemImportacao.trim() || 'ARQUIVO IMPORTADO',
+        sistemaOrigem: sistemaOrigemEfetivo,
         // COLE O CÓDIGO NOVO AQUI
         empresaId: empresaIdAtual,
         nomeArquivo: arquivo.name,
@@ -3771,6 +3803,18 @@ function App() {
                       alert('Selecione um arquivo CSV ou Excel (.xlsx).');
                       evento.target.value = '';
                       return;
+                    }
+
+                    // COLE O CÓDIGO NOVO AQUI — sugerir ERP pelo nome do arquivo
+                    const sistemaIdentificado = identificarSistemaOrigem(
+                      arquivo.name
+                    );
+
+                    if (
+                      sistemaIdentificado &&
+                      !sistemaOrigemImportacao.trim()
+                    ) {
+                      setSistemaOrigemImportacao(sistemaIdentificado);
                     }
 
                     if (/\.xlsx$/i.test(arquivo.name)) {

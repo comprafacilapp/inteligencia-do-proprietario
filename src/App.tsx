@@ -1841,12 +1841,36 @@ if (!confirmarPrevia) {
     !dadosFinanceirosIncompletos && diagnostico.quantidade >= 5
       ? alertas
           .filter((alerta) => alerta.nivel === 'alto')
-          .map((alerta) => {
-            if (alerta.titulo.includes('Despesas'))
-              return 'Investigar os gastos que estão comprometendo o resultado e avaliar reduções sem prejudicar a operação.';
-            if (alerta.titulo.includes('Receitas'))
-              return 'Identificar as fontes de receita que perderam movimento e avaliar medidas de recuperação.';
-            return 'Investigar o ponto de atenção identificado antes de definir uma ação.';
+                    .map((alerta) => {
+            // COLE O CÓDIGO NOVO AQUI — FASE 9
+            if (alerta.titulo.includes('Despesas')) {
+              return (
+                `O QUE IDENTIFICAMOS: ${alerta.descricao}\n\n` +
+                `O QUE FAZER: Investigue os lançamentos da categoria ` +
+                `com maior aumento e avalie reduções sem prejudicar ` +
+                `a operação.\n\n` +
+                `O QUE ACOMPANHAR: Compare as despesas e sua proporção ` +
+                `em relação às receitas nos próximos períodos.`
+              );
+            }
+
+            if (alerta.titulo.includes('Receitas')) {
+              return (
+                `O QUE IDENTIFICAMOS: ${alerta.descricao}\n\n` +
+                `O QUE FAZER: Investigue quais fontes de receita ` +
+                `perderam movimento e avalie medidas de recuperação.\n\n` +
+                `O QUE ACOMPANHAR: Compare as receitas dos próximos ` +
+                `períodos com os registros anteriores.`
+              );
+            }
+
+            return (
+              `O QUE IDENTIFICAMOS: ${alerta.descricao}\n\n` +
+              `O QUE FAZER: Investigue o ponto de atenção antes ` +
+              `de definir uma ação.\n\n` +
+              `O QUE ACOMPANHAR: Verifique a evolução dos indicadores ` +
+              `nos períodos seguintes.`
+            );
           })
           .filter((item, indice, lista) => lista.indexOf(item) === indice)
           .slice(0, 3)
@@ -2838,7 +2862,10 @@ if (!confirmarPrevia) {
                   <article className="oportunidade" key={item}>
                     <span>{String(indice + 1).padStart(2, '0')}</span>
                     <div>
-                      <p>{item}</p>
+                     {/* COLE O CÓDIGO NOVO AQUI — FASE 9 */}
+<p style={{ whiteSpace: 'pre-line', lineHeight: 1.8 }}>
+  {item}
+</p>
                     </div>
                   </article>
                 ))}

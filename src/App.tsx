@@ -2485,6 +2485,39 @@ if (!confirmarPrevia) {
 
         {secao === 'Visão geral' && (
           <section className="painel" style={{ maxWidth: '880px' }}>
+                {/* COLE O CÓDIGO NOVO AQUI — FASE 9 */}
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: '12px',
+        marginBottom: '28px',
+      }}
+    >
+      {[
+        ['RECEITAS DO PERÍODO', diagnostico.receitas],
+        ['DESPESAS DO PERÍODO', diagnostico.despesas],
+        ['RESULTADO REGISTRADO', diagnostico.resultado],
+        ['EVOLUÇÃO DO RESULTADO', variacaoResultado],
+      ].map(([titulo, valor]) => (
+        <div
+          key={String(titulo)}
+          style={{
+            padding: '18px',
+            background: '#f8fbfb',
+            border: '1px solid #dce9e4',
+            borderRadius: '12px',
+          }}
+        >
+          <p className="sobretitulo">{titulo}</p>
+          <h2 style={{ marginTop: '12px', fontSize: '23px' }}>
+            {titulo === 'EVOLUÇÃO DO RESULTADO' && !comparacaoDisponivel
+              ? 'Sem comparação'
+              : formatarValorFinanceiro(Number(valor))}
+          </h2>
+        </div>
+      ))}
+    </div>
             <div className="painel-cabecalho">
               <div>
                 <p className="sobretitulo">

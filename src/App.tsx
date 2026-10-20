@@ -3818,6 +3818,17 @@ function App() {
                     ) {
                       setSistemaOrigemImportacao(sistemaIdentificado);
                     }
+                    // Confirmação antes da importação financeira
+const confirmarImportacao = window.confirm(
+  `Deseja realmente importar o arquivo "${arquivo.name}"?\n\n` +
+  `Os lançamentos financeiros válidos serão registrados na empresa selecionada.\n\n` +
+  `Clique em OK para continuar ou Cancelar para desistir.`
+);
+
+if (!confirmarImportacao) {
+  evento.target.value = '';
+  return;
+}
 
                     if (/\.xlsx$/i.test(arquivo.name)) {
                       await importarArquivoExcel(arquivo);

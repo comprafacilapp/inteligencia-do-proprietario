@@ -1541,6 +1541,45 @@ function App() {
         duplicados,
         totalRegistros: linhas.length - 1,
       };
+      // COLE O CÓDIGO NOVO AQUI — prévia antes de salvar no Firebase
+const valorTotalReceitas = novosLancamentos
+  .filter((item) => item.tipo === 'RECEITA')
+  .reduce((total, item) => total + item.valor, 0);
+
+const valorTotalDespesas = novosLancamentos
+  .filter((item) => item.tipo === 'DESPESA')
+  .reduce((total, item) => total + item.valor, 0);
+
+const formatarValorPrevia = (valor: number) =>
+  valor.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  });
+
+const previaLancamentos = novosLancamentos
+  .slice(0, 5)
+  .map(
+    (item) =>
+      `${item.data} | ${item.descricao} | ${formatarValorPrevia(item.valor)}`
+  )
+  .join('\n');
+
+const confirmarPrevia = window.confirm(
+  `PRÉVIA DA IMPORTAÇÃO\n\n` +
+    `Arquivo: ${arquivo.name}\n` +
+    `Sistema: ${sistemaOrigemEfetivo}\n\n` +
+    `Novos lançamentos: ${novosLancamentos.length}\n` +
+    `Duplicados ignorados: ${duplicados}\n` +
+    `Receitas: ${formatarValorPrevia(valorTotalReceitas)}\n` +
+    `Despesas: ${formatarValorPrevia(valorTotalDespesas)}\n\n` +
+    `PRIMEIROS LANÇAMENTOS:\n` +
+    `${previaLancamentos || 'Nenhum lançamento novo'}\n\n` +
+    `Deseja confirmar a importação?`
+);
+
+if (!confirmarPrevia) {
+  return;
+}
 
       if (novosLancamentos.length > 0) {
         setLancamentosFinanceiros((anteriores) => [

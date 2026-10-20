@@ -2862,10 +2862,28 @@ if (!confirmarPrevia) {
                   <article className="oportunidade" key={item}>
                     <span>{String(indice + 1).padStart(2, '0')}</span>
                     <div>
-                     {/* COLE O CÓDIGO NOVO AQUI — FASE 9 */}
 <p style={{ whiteSpace: 'pre-line', lineHeight: 1.8 }}>
   {item}
 </p>
+
+<button
+  type="button"
+  onClick={() =>
+    registrarDecisaoVinculada(item, 'Oportunidades')
+  }
+  style={{
+    marginTop: '12px',
+    padding: '10px 16px',
+    borderRadius: '8px',
+    border: 'none',
+    background: '#0f766e',
+    color: '#ffffff',
+    fontWeight: 600,
+    cursor: 'pointer',
+  }}
+>
+  Registrar decisão
+</button>
                     </div>
                   </article>
                 ))}

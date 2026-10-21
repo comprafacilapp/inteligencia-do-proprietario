@@ -3153,6 +3153,66 @@ if (!confirmarPrevia) {
                 </p>
               </div>
             </article>
+                        {/* FASE 9 — PAINEL EXECUTIVO DE RESULTADOS */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              {[
+                {
+                  titulo: 'Resultados positivos',
+                  valor: positivasAvaliadas,
+                  cor: '#166534',
+                },
+                {
+                  titulo: 'Resultados negativos',
+                  valor: negativasAvaliadas,
+                  cor: '#b91c1c',
+                },
+                {
+                  titulo: 'Aguardando avaliação',
+                  valor:
+                    decisoes.length -
+                    positivasAvaliadas -
+                    negativasAvaliadas,
+                  cor: '#c2410c',
+                },
+                {
+                  titulo: 'Comparações automáticas',
+                  valor: comparacoesDisponiveis,
+                  cor: '#214b58',
+                },
+              ].map((indicador) => (
+                <article
+                  key={indicador.titulo}
+                  style={{
+                    padding: '18px',
+                    border: '1px solid #dce9e4',
+                    borderRadius: '12px',
+                    background: '#f7faf9',
+                  }}
+                >
+                  <p style={{ color: '#64748b', margin: 0 }}>
+                    {indicador.titulo}
+                  </p>
+                  <strong
+                    style={{
+                      display: 'block',
+                      fontSize: '26px',
+                      marginTop: '8px',
+                      color: indicador.cor,
+                    }}
+                  >
+                    {indicador.valor}
+                  </strong>
+                </article>
+              ))}
+            </div>
             <details style={{ marginTop: '20px' }}>
               <summary
                 style={{ cursor: 'pointer', color: '#214b58', fontWeight: 600 }}

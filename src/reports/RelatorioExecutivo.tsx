@@ -53,6 +53,28 @@ export default function RelatorioExecutivo({
               line-height: 1.6;
             }
             h2, h3 { color: #214b58; }
+            h2 {
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+
+h3 {
+  page-break-after: avoid;
+  break-after: avoid;
+}
+
+p {
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+@media print {
+  h2, h3, p {
+    orphans: 3;
+    widows: 3;
+  }
+}
             h3 {
               margin-top: 28px;
               border-bottom: 1px solid #dce9e4;

@@ -661,9 +661,14 @@ const empresaAtualRelatorio = empresasCadastradas.find(
   });
   // Sincronização por UID: primeiro lê a nuvem e os dados locais do próprio usuário.
   // A gravação só começa depois do primeiro snapshot, evitando sobrescritas prematuras.
-  const idsNuvem = useRef<Set<string>>(new Set());
+   const idsNuvem = useRef<Set<string>>(new Set());
   const idsEmEnvio = useRef<Set<string>>(new Set());
 
+  // Controla quantas tentativas falharam por lançamento.
+  const falhasSincronizacao = useRef<Map<string, number>>(new Map());
+
+  // Controle para repetir a sincronização após falhas.
+  const [tentativaSincronizacao, setTentativaSincronizacao] = useState(0);
   useEffect(() => {
     if (
       !usuarioAtual ||
@@ -686,23 +691,68 @@ const empresaAtualRelatorio = empresasCadastradas.find(
         doc(db, 'usuarios', usuarioAtual.uid, 'lancamentos', lancamento.id),
         lancamento
       )
-        .then(() => {
+                     .then(() => {
+          // Ignora confirmações de uma conta que já saiu.
+          if (auth.currentUser?.uid !== usuarioAtual.uid) {
+            return;
+          }
+
           idsNuvem.current.add(lancamento.id);
+
+          // A gravação foi confirmada pelo Firebase.
+          falhasSincronizacao.current.delete(lancamento.id);
         })
         .catch((erro) => {
           console.error('Falha ao sincronizar lançamento:', erro);
-          // Mantém a cópia local para permitir nova tentativa.
+
+          // Não repetir automaticamente erros de permissão.
+          const codigo = String(erro?.code ?? '');
+
+          if (
+            codigo === 'permission-denied' ||
+            codigo === 'invalid-argument' ||
+            codigo === 'unauthenticated'
+          ) {
+            return;
+          }
+
+                   // Limita as novas tentativas para evitar repetição infinita.
+          const falhas =
+            (falhasSincronizacao.current.get(lancamento.id) ?? 0) + 1;
+
+          falhasSincronizacao.current.set(lancamento.id, falhas);
+
+                   if (falhas <= 3) {
+            setTimeout(() => {
+              if (
+                auth.currentUser?.uid === usuarioAtual.uid &&
+                !idsNuvem.current.has(lancamento.id) &&
+                !idsEmEnvio.current.has(lancamento.id)
+              ) {
+                setTentativaSincronizacao((anterior) => anterior + 1);
+              }
+            }, 5000);
+          } else {
+            console.error(
+              'Sincronização pendente após três novas tentativas:',
+              lancamento.id
+            );
+          }
         })
-        .finally(() => {
-          idsEmEnvio.current.delete(lancamento.id);
-        });
+               .finally(() => {
+          // Não altera os controles se outra conta estiver conectada.
+          if (auth.currentUser?.uid === usuarioAtual.uid) {
+            idsEmEnvio.current.delete(lancamento.id);
+          }
+        }); 
     }
-  }, [
+    }, [
     usuarioAtual,
     lancamentosFinanceiros,
     lancamentosCarregados,
     uidLancamentos,
-  ]);
+    tentativaSincronizacao,
+  ]); 
 
   useEffect(() => {
     if (!usuarioAtual) {
@@ -716,6 +766,8 @@ const empresaAtualRelatorio = empresasCadastradas.find(
     setUidLancamentos(null);
     idsNuvem.current = new Set();
     idsEmEnvio.current = new Set();
+    falhasSincronizacao.current = new Map();
+
 
     const chaveLocal = `prevanzia_lancamentos_financeiros_${usuarioAtual.uid}`;
     let locais: LancamentoFinanceiro[] = [];
@@ -1597,9 +1649,10 @@ if (!confirmarPrevia) {
         ...anteriores,
       ]);
 
-      alert(
-        `${novosLancamentos.length} lançamento(s) importado(s).\n` +
-          `${duplicados} duplicado(s) ignorado(s).`
+          alert(
+        `${novosLancamentos.length} lançamento(s) adicionado(s) ao aplicativo.\n` +
+          `${duplicados} duplicado(s) ignorado(s).\n\n` +
+          `A sincronização com a nuvem será realizada pelo Firebase.`
       );
     } catch {
       alert('Não foi possível processar o arquivo CSV.');

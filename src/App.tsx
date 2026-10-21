@@ -2868,9 +2868,24 @@ if (!confirmarPrevia) {
 
 <button
   type="button"
-  onClick={() =>
-    registrarDecisaoVinculada(item, 'Oportunidades')
-  }
+  onClick={() => {
+    const decisao = window.prompt(
+      'Qual decisão você deseja tomar? Revise ou personalize a ação antes de registrar:',
+      'Investigar os gastos identificados e avaliar medidas para melhorar o resultado.'
+    );
+
+    if (decisao === null) return;
+
+    if (!decisao.trim()) {
+      alert('Escreva uma decisão antes de registrar.');
+      return;
+    }
+
+    registrarDecisaoVinculada(
+      decisao,
+      'Oportunidades'
+    );
+  }}
   style={{
     marginTop: '12px',
     padding: '10px 16px',

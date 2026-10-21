@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import './App.css';
+import RelatorioExecutivo from './reports/RelatorioExecutivo';
 import { signOut, onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from './firebase';
 import { db } from './firebase';
@@ -558,7 +559,11 @@ function App() {
     : 'empresa_demo';
   const [nomeEmpresa, setNomeEmpresa] = useState('');
   const [documentoEmpresa, setDocumentoEmpresa] = useState('');
-
+const empresaAtualRelatorio = empresasCadastradas.find(
+    (empresa) =>
+      empresa.id === empresaIdAtual &&
+      empresa.proprietarioUid === usuarioAtual?.uid
+  );
   // COLE O CÓDIGO NOVO AQUI
 
   // PREVANZIA — Leitura das empresas do proprietário
@@ -3099,6 +3104,21 @@ if (!confirmarPrevia) {
         )}
         {secao === 'Resultados' && (
           <section className="painel">
+             {usuarioAtual &&
+      empresaIdAtual !== 'empresa_demo' &&
+      lancamentosCarregados &&
+      uidLancamentos === usuarioAtual.uid &&
+      empresaAtualRelatorio && (
+        <RelatorioExecutivo
+          empresa={empresaAtualRelatorio.nome}
+          periodo={periodo}
+          receitas={diagnostico.receitas}
+          despesas={diagnostico.despesas}
+          alertas={alertas.map((alerta) => alerta.descricao)}
+          oportunidades={diagnostico.oportunidades}
+          decisoes={decisoes}
+        />
+      )}
             <div className="painel-cabecalho">
               <div>
                 <p className="sobretitulo">O QUE ACONTECEU DEPOIS?</p>

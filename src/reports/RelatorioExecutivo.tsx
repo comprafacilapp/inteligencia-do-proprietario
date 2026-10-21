@@ -1,11 +1,64 @@
 
-export default function RelatorioExecutivo() {
+type RelatorioExecutivoProps = {
+  empresa: string;
+  periodo: string;
+  receitas: number;
+  despesas: number;
+  alertas: string[];
+  oportunidades: string[];
+  decisoes: string[];
+};
+
+export default function RelatorioExecutivo({
+  empresa,
+  periodo,
+  receitas,
+  despesas,
+  alertas,
+  oportunidades,
+  decisoes,
+}: RelatorioExecutivoProps) {
+  const moeda = (valor: number) =>
+    valor.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+
+  const gerarPDF = () => {
+    window.print();
+  };
+
   return (
     <section>
       <h2>Relatório Executivo — PREVANZIA</h2>
-      <p>
-        Inteligência do Proprietário
-      </p>
+      <p>Antecipe o futuro. Decida com inteligência.</p>
+
+      <h3>Empresa: {empresa}</h3>
+      <p>Período: {periodo}</p>
+
+      <h3>Resumo financeiro</h3>
+      <p>Receitas: {moeda(receitas)}</p>
+      <p>Despesas: {moeda(despesas)}</p>
+      <p>Resultado: {moeda(receitas - despesas)}</p>
+
+      <h3>Alertas</h3>
+      {alertas.length
+        ? alertas.map((item, i) => <p key={i}>{item}</p>)
+        : <p>Nenhum alerta disponível.</p>}
+
+      <h3>Oportunidades</h3>
+      {oportunidades.length
+        ? oportunidades.map((item, i) => <p key={i}>{item}</p>)
+        : <p>Nenhuma oportunidade disponível.</p>}
+
+      <h3>Decisões</h3>
+      {decisoes.length
+        ? decisoes.map((item, i) => <p key={i}>{item}</p>)
+        : <p>Nenhuma decisão registrada.</p>}
+
+      <button type="button" onClick={gerarPDF}>
+        Gerar PDF Executivo
+      </button>
     </section>
   );
 }

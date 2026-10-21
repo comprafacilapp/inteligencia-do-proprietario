@@ -2925,6 +2925,63 @@ if (!confirmarPrevia) {
               O PREVANZIA acompanha as decisões registradas e verifica mudanças
               nos indicadores quando houver dados posteriores comparáveis.
             </p>
+                        {/* FASE 9 — RESUMO EXECUTIVO DAS DECISÕES */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '12px',
+                marginTop: '20px',
+                marginBottom: '20px',
+              }}
+            >
+              {[
+                {
+                  titulo: 'Total de decisões',
+                  valor: decisoes.length,
+                },
+                {
+                  titulo: 'Aguardando resultados',
+                  valor: decisoes.filter(
+                    (_, indice) =>
+                      !comparacoesAutomaticas[indice] &&
+                      !decisaoPossuiAvaliacaoValida(indice)
+                  ).length,
+                },
+                {
+                  titulo: 'Com avaliação disponível',
+                  valor: decisoes.filter(
+                    (_, indice) =>
+                      Boolean(comparacoesAutomaticas[indice]) ||
+                      decisaoPossuiAvaliacaoValida(indice)
+                  ).length,
+                },
+              ].map((indicador) => (
+                <article
+                  key={indicador.titulo}
+                  style={{
+                    padding: '18px',
+                    border: '1px solid #dce9e4',
+                    borderRadius: '12px',
+                    background: '#f7faf9',
+                  }}
+                >
+                  <p style={{ color: '#64748b', margin: 0 }}>
+                    {indicador.titulo}
+                  </p>
+                  <strong
+                    style={{
+                      display: 'block',
+                      fontSize: '26px',
+                      marginTop: '8px',
+                      color: '#214b58',
+                    }}
+                  >
+                    {indicador.valor}
+                  </strong>
+                </article>
+              ))}
+            </div>
             {decisoes.length === 0 ? (
               <p>Nenhuma decisão registrada até agora.</p>
             ) : (

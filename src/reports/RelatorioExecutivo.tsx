@@ -67,6 +67,7 @@ p {
   font-size: 12px;
   line-height: 1.7;
   overflow-wrap: anywhere;
+  margin: 10px 0;
 }
 
 @media print {

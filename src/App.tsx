@@ -2937,6 +2937,25 @@ if (!confirmarPrevia) {
                     <article className="oportunidade" key={indice}>
                       <span>{String(indice + 1).padStart(2, '0')}</span>
                       <div>
+                                                {/* FASE 9 — STATUS DA DECISÃO */}
+                        <p
+                          style={{
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            color: comparacaoAutomatica
+                              ? '#166534'
+                              : avaliada
+                              ? '#0369a1'
+                              : '#92400e',
+                            marginBottom: '8px',
+                          }}
+                        >
+                          {comparacaoAutomatica
+                            ? '● COMPARAÇÃO DISPONÍVEL'
+                            : avaliada
+                            ? '● AVALIAÇÃO REGISTRADA'
+                            : '● AGUARDANDO RESULTADOS'}
+                        </p>
                         <p>{decisao}</p>
                         <small style={{ color: '#64748b' }}>
                           {comparacaoAutomatica

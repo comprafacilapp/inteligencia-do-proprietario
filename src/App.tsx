@@ -616,6 +616,7 @@ const empresaAtualRelatorio = empresasCadastradas.find(
 
   useEffect(() => {
     const cancelar = onAuthStateChanged(auth, (usuario) => {
+      uidDadosEmMemoria.current = null;
       setLancamentosCarregados(false);
       setUidLancamentos(null);
       setLancamentosFinanceiros([]);
@@ -661,6 +662,9 @@ const empresaAtualRelatorio = empresasCadastradas.find(
   });
   // Sincronização por UID: primeiro lê a nuvem e os dados locais do próprio usuário.
   // A gravação só começa depois do primeiro snapshot, evitando sobrescritas prematuras.
+  // COLE O CÓDIGO NOVO AQUI
+// Identifica a conta proprietária dos lançamentos mantidos em memória.
+const uidDadosEmMemoria = useRef<string | null>(null);
    const idsNuvem = useRef<Set<string>>(new Set());
   const idsEmEnvio = useRef<Set<string>>(new Set());
 
@@ -820,17 +824,37 @@ const empresaAtualRelatorio = empresasCadastradas.find(
               Number.isFinite(item.valor) &&
               item.valor >= 0
           );
-        idsNuvem.current = new Set(nuvem.map((item) => item.id));
-        setLancamentosFinanceiros((anteriores) => {
-          const unicos = new Map<string, LancamentoFinanceiro>();
-          for (const item of locais) unicos.set(item.id, item);
-          for (const item of anteriores) unicos.set(item.id, item);
-          for (const item of nuvem) unicos.set(item.id, item);
-          return Array.from(unicos.values());
-        });
-        locais = [];
-        setUidLancamentos(usuarioAtual.uid);
-        setLancamentosCarregados(true);
+       idsNuvem.current = new Set(nuvem.map((item) => item.id));
+
+// COLE O CÓDIGO NOVO AQUI
+setLancamentosFinanceiros((anteriores) => {
+  const unicos = new Map<string, LancamentoFinanceiro>();
+
+  // Recupera somente os dados locais desta conta.
+  for (const item of locais) {
+    unicos.set(item.id, item);
+  }
+
+  // Só reaproveita a memória se pertencer à mesma conta.
+  if (uidDadosEmMemoria.current === usuarioAtual.uid) {
+    for (const item of anteriores) {
+      unicos.set(item.id, item);
+    }
+  }
+
+  // Os dados confirmados pelo Firebase têm prioridade.
+  for (const item of nuvem) {
+    unicos.set(item.id, item);
+  }
+
+  uidDadosEmMemoria.current = usuarioAtual.uid;
+
+  return Array.from(unicos.values());
+});
+
+locais = [];
+setUidLancamentos(usuarioAtual.uid);
+setLancamentosCarregados(true);
       },
       (erro) => {
         console.error('Erro ao ler lançamentos do Firestore:', erro);
@@ -898,7 +922,13 @@ const empresaAtualRelatorio = empresasCadastradas.find(
     const cancelar = onSnapshot(
       collection(db, 'usuarios', uid, 'historicoImportacoes'),
       (resultado) => {
-        if (!ativo) return;
+       // COLE O CÓDIGO NOVO AQUI
+if (
+  !ativo ||
+  auth.currentUser?.uid !== usuarioAtual.uid
+) {
+  return;
+}
         const nuvem = resultado.docs
           .map((documento) => documento.data())
           .filter(validarHistoricoImportacao);

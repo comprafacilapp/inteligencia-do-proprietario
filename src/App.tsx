@@ -879,6 +879,8 @@ setLancamentosCarregados(true);
   >(null);
   const idsHistoricoNuvem = useRef<Set<string>>(new Set());
   const idsHistoricoEnviando = useRef<Set<string>>(new Set());
+  // COLE O CÓDIGO NOVO AQUI
+const uidHistoricoEmMemoria = useRef<string | null>(null);
 
   const validarHistoricoImportacao = (
     item: unknown

@@ -2561,7 +2561,7 @@ if (!confirmarPrevia) {
 
         <div className="sidebar-rodape">
           <span className="status-ponto" />
-          Ambiente de demonstração
+        PREVANZIA • Inteligência empresarial
         </div>
       </aside>
 
@@ -2589,9 +2589,11 @@ if (!confirmarPrevia) {
         <div className="aviso-demo">
           <strong>Análise dos lançamentos cadastrados</strong>
           <span>
-            Indicadores calculados com os lançamentos disponíveis na conta. Não
-            incluem contas a receber, contas a pagar, impostos ou custos não
-            informados. Registros de teste não representam uma empresa real.
+            Os indicadores são calculados com base nos lançamentos
+disponíveis na empresa selecionada. Não incluem contas
+a receber, contas a pagar, impostos ou custos que não
+tenham sido informados. A qualidade das análises
+depende da integridade dos dados fornecidos.
           </span>
         </div>
 

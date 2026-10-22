@@ -807,7 +807,10 @@ const uidDadosEmMemoria = useRef<string | null>(null);
     const cancelarLeitura = onSnapshot(
       referencia,
       (resultado) => {
-        if (!ativo) return;
+      // COLE O CÓDIGO NOVO AQUI
+if (!ativo || auth.currentUser?.uid !== usuarioAtual.uid) {
+  return;
+}
         const nuvem = resultado.docs
           .map((documento) => documento.data())
           .filter(

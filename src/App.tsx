@@ -3971,12 +3971,21 @@ depende da integridade dos dados fornecidos.
                   criadaEm: new Date().toISOString(),
                 };
 
-                try {
-                  await setDoc(doc(db, 'empresas', id), empresa);
-                  alert('Empresa cadastrada com sucesso!');
-                  setNomeEmpresa('');
-                  setDocumentoEmpresa('');
-                } catch (erro) {
+               try {
+  await setDoc(doc(db, 'empresas', id), empresa);
+
+  // COLE O CÓDIGO NOVO AQUI
+  setEmpresaSelecionadaId(id);
+
+  localStorage.setItem(
+    `prevanzia_empresa_selecionada_${usuarioAtual.uid}`,
+    id
+  );
+
+  alert('Empresa cadastrada e selecionada com sucesso!');
+  setNomeEmpresa('');
+  setDocumentoEmpresa('');
+} catch (erro) {
                   console.error('Erro ao cadastrar empresa:', erro);
                   alert('Não foi possível cadastrar a empresa.');
                 }

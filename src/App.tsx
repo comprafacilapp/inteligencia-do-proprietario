@@ -1081,7 +1081,7 @@ if (
       const leitorExcel = moduloExcel.default;
       type CelulaExcel = string | number | boolean | Date | null;
       const resultadoExcel: unknown = await leitorExcel(arquivo);
-      console.log('RESULTADO REAL DO EXCEL:', resultadoExcel);
+     
 
       const objetoExcel =
         resultadoExcel !== null && typeof resultadoExcel === 'object'
@@ -1202,6 +1202,9 @@ if (
       );
       return;
     }
+     const uidInicioImportacao = usuarioAtual.uid;
+    const empresaInicioImportacao = empresaIdAtual;
+
     try {
       if (arquivo.size === 0) {
         alert('O arquivo está vazio.');
@@ -1691,6 +1694,20 @@ const confirmarPrevia = window.confirm(
 );
 
 if (!confirmarPrevia) {
+  return;
+}
+
+// COLE O CÓDIGO NOVO AQUI
+if (
+  auth.currentUser?.uid !== uidInicioImportacao ||
+  localStorage.getItem(
+    `prevanzia_empresa_selecionada_${uidInicioImportacao}`
+  ) !== empresaInicioImportacao
+) {
+  alert(
+    'A conta ou empresa selecionada mudou durante a importação. ' +
+    'Por segurança, a importação foi cancelada.'
+  );
   return;
 }
 

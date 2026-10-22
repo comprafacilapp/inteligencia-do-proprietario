@@ -903,6 +903,7 @@ setLancamentosCarregados(true);
   };
 
   useEffect(() => {
+    uidHistoricoEmMemoria.current = null;
     setUidHistoricoCarregado(null);
     setHistoricoImportacoes([]);
     idsHistoricoNuvem.current = new Set();
@@ -936,15 +937,30 @@ if (
           .map((documento) => documento.data())
           .filter(validarHistoricoImportacao);
         idsHistoricoNuvem.current = new Set(nuvem.map((item) => item.id));
-        setHistoricoImportacoes((anteriores) => {
-          const unicos = new Map<string, HistoricoImportacao>();
-          for (const item of locais) unicos.set(item.id, item);
-          for (const item of anteriores) unicos.set(item.id, item);
-          for (const item of nuvem) unicos.set(item.id, item);
-          return [...unicos.values()].sort((a, b) =>
-            b.importadoEm.localeCompare(a.importadoEm)
-          );
-        });
+      setHistoricoImportacoes((anteriores) => {
+  const unicos = new Map<string, HistoricoImportacao>();
+
+  for (const item of locais) {
+    unicos.set(item.id, item);
+  }
+
+  // COLE O CÓDIGO NOVO AQUI
+  if (uidHistoricoEmMemoria.current === uid) {
+    for (const item of anteriores) {
+      unicos.set(item.id, item);
+    }
+  }
+
+  for (const item of nuvem) {
+    unicos.set(item.id, item);
+  }
+
+  uidHistoricoEmMemoria.current = uid;
+
+  return [...unicos.values()].sort((a, b) =>
+    b.importadoEm.localeCompare(a.importadoEm)
+  );
+});
         locais = [];
         setUidHistoricoCarregado(uid);
       },

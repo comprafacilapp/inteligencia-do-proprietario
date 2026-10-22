@@ -46,12 +46,21 @@ export default function RelatorioExecutivo({
           <meta charset="UTF-8" />
           <title>Relatório Executivo - PREVANZIA</title>
           <style>
-            body {
-              font-family: Arial, sans-serif;
-              margin: 40px;
-              color: #214b58;
-              line-height: 1.6;
-            }
+          body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  color: #214b58;
+  line-height: 1.4;
+  font-size: 12px;
+}
+
+/* COLE O CÓDIGO NOVO AQUI */
+
+@media print {
+  body {
+    margin: 0;
+  }
+}
             h2, h3 { color: #214b58; }
             h2 {
   font-size: 24px;
@@ -64,10 +73,10 @@ h3 {
 }
 
 p {
-  font-size: 12px;
-  line-height: 1.7;
+  font-size: 11px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
-  margin: 10px 0;
+  margin: 6px 0;
 }
 
 @media print {
@@ -77,10 +86,13 @@ p {
   }
 }
             h3 {
-              margin-top: 28px;
-              border-bottom: 1px solid #dce9e4;
-              padding-bottom: 8px;
-            }
+  margin-top: 16px;
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #dce9e4;
+  page-break-after: avoid;
+  break-after: avoid;
+}
             button { display: none; }
             @page { size: A4; margin: 15mm; }
           </style>

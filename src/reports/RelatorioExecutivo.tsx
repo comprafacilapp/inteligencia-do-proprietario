@@ -128,12 +128,22 @@ p {
         ? oportunidades.map((item, i) => <p key={i}>{item}</p>)
         : <p>Nenhuma oportunidade disponível.</p>}
 
-      <h3>Decisões</h3>
-      {decisoes.length
-        ? decisoes.map((item, i) => <p key={i}>{item}</p>)
-        : <p>Nenhuma decisão registrada.</p>}
+     <h3>Decisões</h3>
+{decisoes.length
+  ? decisoes.map((item, i) => (
+      <p
+        key={i}
+        style={{
+          breakInside: 'avoid',
+          pageBreakInside: 'avoid',
+        }}
+      >
+        {item}
+      </p>
+    ))
+  : <p>Nenhuma decisão registrada.</p>}
 
-      <button type="button" onClick={gerarPDF}>
+<button type="button" onClick={gerarPDF}>
         Gerar PDF Executivo
       </button>
     </section>

@@ -993,14 +993,19 @@ if (
       idsHistoricoEnviando.current.add(item.id);
       setDoc(doc(db, 'usuarios', uid, 'historicoImportacoes', item.id), item)
         .then(() => {
-          idsHistoricoNuvem.current.add(item.id);
-        })
-        .catch((erro) =>
-          console.error('Erro ao enviar histórico de arquivos:', erro)
-        )
-        .finally(() => {
-          idsHistoricoEnviando.current.delete(item.id);
-        });
+  // COLE O CÓDIGO NOVO AQUI
+  if (auth.currentUser?.uid !== uid) return;
+
+  idsHistoricoNuvem.current.add(item.id);
+})
+.catch((erro) => {
+  console.error('Erro ao enviar histórico de arquivos:', erro);
+})
+.finally(() => {
+  if (auth.currentUser?.uid !== uid) return;
+
+  idsHistoricoEnviando.current.delete(item.id);
+});
     }
   }, [historicoImportacoes, usuarioAtual, uidHistoricoCarregado]);
 

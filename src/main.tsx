@@ -35,19 +35,25 @@ function AplicacaoProtegida() {
           return valor !== null && valor !== '[]';
         });
 
-        if (donoDosDados && donoDosDados !== usuarioAtual.uid) {
-          setBloqueado(true);
-          return;
-        }
+       // COLE O CÓDIGO NOVO AQUI
 
-        if (!donoDosDados && existemDadosAntigos) {
-          setBloqueado(true);
-          return;
-        }
+// Preserva dados antigos que ainda não possuem proprietário.
+if (!donoDosDados && existemDadosAntigos) {
+  setBloqueado(true);
+  return;
+}
 
-        localStorage.setItem('prevanzia_proprietario_local', usuarioAtual.uid);
+// Não transfere dados antigos entre contas.
+// Cada usuário mantém seus registros separados pelo UID.
+if (!donoDosDados || donoDosDados === usuarioAtual.uid) {
+  localStorage.setItem(
+    'prevanzia_proprietario_local',
+    usuarioAtual.uid
+  );
+}
 
-        setBloqueado(false);
+// Permite a troca de contas autenticadas.
+setBloqueado(false);
       },
       (erro) => {
         console.error('Erro de autenticação:', erro);

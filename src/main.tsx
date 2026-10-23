@@ -107,11 +107,12 @@ setBloqueado(false);
 
 // PREVANZIA — Navegação inicial do site comercial
 const caminhoAtual = window.location.pathname;
+const parametros = new URLSearchParams(window.location.search);
 
 const mostrarSiteComercial =
+  parametros.get('pagina') === 'site' ||
   caminhoAtual.endsWith('/site') ||
   caminhoAtual.endsWith('/site/');
-
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {mostrarSiteComercial ? (

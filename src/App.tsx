@@ -106,9 +106,31 @@ export type AcessoEmpresaPrevanzia = {
   perfil: 'PROPRIETARIO' | 'CONFIANCA';
   ativo: boolean;
 };
+// PREVANZIA — Definição comercial dos planos
+type PlanoPrevanzia = 'ESSENCIAL' | 'PROFISSIONAL';
+
+const PLANOS_PREVANZIA = {
+  ESSENCIAL: {
+    nome: 'Essencial',
+    precoMensal: 39.90,
+    limiteEmpresas: 1,
+  },
+  PROFISSIONAL: {
+    nome: 'Profissional',
+    precoMensal: 69.90,
+    limiteEmpresas: 3,
+  },
+} as const;
+
+// PREVANZIA — Situação da assinatura
+type AssinaturaPrevanzia = {
+  plano: PlanoPrevanzia;
+  status: 'ATIVA' | 'PENDENTE' | 'CANCELADA' | 'EXPIRADA';
+  validadeAte?: string;
+  atualizadaEm?: string;
+};
 
 // FASE 3 — VALIDAÇÃO DOS REGISTROS FINANCEIROS UNIVERSAIS
-
 function validarRegistroFinanceiroUniversal(
   registro: RegistroFinanceiroUniversal
 ): boolean {
@@ -525,7 +547,9 @@ function App() {
   );
   // Identificação provisória da empresa.
   // Mantém compatibilidade com os lançamentos existentes.
-  // COLE O CÓDIGO NOVO AQUI
+    // PREVANZIA — Assinatura do proprietário
+  const [assinaturaAtual, setAssinaturaAtual] =
+    useState<AssinaturaPrevanzia | null>(null);
   const [empresaSelecionadaId, setEmpresaSelecionadaId] = useState<
     string | null
   >(() => {
@@ -565,6 +589,49 @@ const empresaAtualRelatorio = empresasCadastradas.find(
       empresa.proprietarioUid === usuarioAtual?.uid
   );
   // COLE O CÓDIGO NOVO AQUI
+    // PREVANZIA — Leitura da assinatura do proprietário
+  useEffect(() => {
+    if (!usuarioAtual) {
+      setAssinaturaAtual(null);
+      return;
+    }
+
+    setAssinaturaAtual(null);
+
+    const referenciaAssinatura = doc(
+      db,
+      'usuarios',
+      usuarioAtual.uid,
+      'configuracoes',
+      'assinatura'
+    );
+
+    const cancelarAssinatura = onSnapshot(
+      referenciaAssinatura,
+      (resultado) => {
+        const dados = resultado.data();
+
+        if (
+          resultado.exists() &&
+          (dados?.plano === 'ESSENCIAL' ||
+            dados?.plano === 'PROFISSIONAL') &&
+          ['ATIVA', 'PENDENTE', 'CANCELADA', 'EXPIRADA'].includes(
+            dados?.status
+          )
+        ) {
+          setAssinaturaAtual(dados as AssinaturaPrevanzia);
+        } else {
+          setAssinaturaAtual(null);
+        }
+      },
+      (erro) => {
+        console.error('Erro ao carregar assinatura:', erro);
+        setAssinaturaAtual(null);
+      }
+    );
+
+    return () => cancelarAssinatura();
+  }, [usuarioAtual]);
 
   // PREVANZIA — Leitura das empresas do proprietário
   useEffect(() => {

@@ -14,6 +14,97 @@ export default function SiteComercial() {
   const [mostrarAviso, setMostrarAviso] = useState(false);
   const informarPreparacao = () => setMostrarAviso(true);
 
+   const documentoAtual = new URLSearchParams(
+    window.location.search
+  ).get('documento');
+
+  const documentos = {
+    privacidade: {
+      titulo: 'Política de Privacidade',
+      texto: [
+        'O PREVANZIA é uma plataforma de inteligência empresarial que utiliza informações fornecidas pelos usuários para gerar análises, diagnósticos e recomendações.',
+        'Podemos tratar dados de cadastro, autenticação, identificação de empresas, informações financeiras importadas, registros de decisões e solicitações de atendimento.',
+        'Os dados são utilizados para funcionamento da plataforma, autenticação, organização das empresas, geração de análises e prestação de suporte.',
+        'A plataforma utiliza serviços tecnológicos, incluindo Firebase, para autenticação e armazenamento de informações.',
+        'Os titulares podem solicitar informações, correção ou exclusão de dados pessoais nas hipóteses previstas na LGPD pelo e-mail contato.prevanzia@gmail.com.',
+        'Esta política é preliminar e será complementada com identificação do responsável, informações sobre fornecedores, retenção e procedimentos de exclusão antes da comercialização.',
+      ],
+    },
+    termos: {
+      titulo: 'Termos de Uso',
+      texto: [
+        'O PREVANZIA oferece ferramentas de inteligência empresarial para apoiar proprietários na análise de informações financeiras e na tomada de decisões.',
+        'O usuário é responsável pela veracidade das informações fornecidas e pela autorização para utilizar os dados importados.',
+        'Os diagnósticos e recomendações são informativos e não representam garantia de lucro ou substituição de orientação profissional.',
+        'O usuário deve proteger suas credenciais e utilizar a plataforma de maneira lícita.',
+        'Os planos e o teste gratuito apresentados no site ainda estão em preparação e não estão disponíveis para contratação.',
+        'Dúvidas e solicitações podem ser encaminhadas para contato.prevanzia@gmail.com.',
+      ],
+    },
+    assinaturas: {
+      titulo: 'Assinaturas e Cancelamento',
+      texto: [
+        'Plano Essencial: R$ 39,90 por mês, com utilização prevista para até uma empresa.',
+        'Plano Profissional: R$ 69,90 por mês, com utilização prevista para até três empresas.',
+        'Está previsto um teste gratuito de sete dias, cujas condições serão apresentadas antes da ativação.',
+        'Os meios de pagamento, renovação, cancelamento e reembolso serão informados antes do início das contratações.',
+        'Será respeitado o direito de arrependimento nas situações em que a legislação brasileira o determinar.',
+        'Atendimento: contato.prevanzia@gmail.com.',
+      ],
+    },
+  };
+
+  const documentoSelecionado =
+    documentoAtual === 'privacidade' ||
+    documentoAtual === 'termos' ||
+    documentoAtual === 'assinaturas'
+      ? documentos[documentoAtual]
+      : null;
+
+  if (documentoSelecionado) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#f2f6fb',
+          color: '#152a41',
+          fontFamily: 'Arial, sans-serif',
+          padding: '40px 5%',
+        }}
+      >
+        <main
+          style={{
+            maxWidth: 850,
+            margin: '0 auto',
+            background: '#ffffff',
+            padding: '35px',
+            borderRadius: 16,
+            lineHeight: 1.8,
+          }}
+        >
+          <a
+            href="?pagina=site"
+            style={{ color: '#0876a7', fontWeight: 700 }}
+          >
+            ← Voltar ao site do PREVANZIA
+          </a>
+
+          <h1>{documentoSelecionado.titulo}</h1>
+
+          <p><strong>Versão preliminar — 23/10/2026</strong></p>
+
+          {documentoSelecionado.texto.map((paragrafo, indice) => (
+            <p key={indice}>{paragrafo}</p>
+          ))}
+
+          <p>
+            <strong>Contato:</strong> contato.prevanzia@gmail.com
+          </p>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="prevanzia-site">
       <style>{`
@@ -221,7 +312,34 @@ export default function SiteComercial() {
         </section>
       </main>
 
-      <footer className="rodape"><strong>PREVANZIA</strong><p>Antecipe o futuro. Decida com inteligência.</p></footer>
+     <footer className="rodape">
+  <strong>PREVANZIA</strong>
+  <p>Antecipe o futuro. Decida com inteligência.</p>
+
+  <div
+    style={{
+      display: 'flex',
+      justifyContent: 'center',
+      flexWrap: 'wrap',
+      gap: 20,
+      marginTop: 20,
+    }}
+  >
+    <a href="?pagina=site&documento=privacidade" style={{ color: '#8ddfff' }}>
+      Política de Privacidade
+    </a>
+
+    <a href="?pagina=site&documento=termos" style={{ color: '#8ddfff' }}>
+      Termos de Uso
+    </a>
+
+    <a href="?pagina=site&documento=assinaturas" style={{ color: '#8ddfff' }}>
+      Assinaturas e Cancelamento
+    </a>
+  </div>
+
+  <p>Contato: contato.prevanzia@gmail.com</p>
+</footer>
 
       {mostrarAviso && (
         <div className="modal-fundo" role="dialog" aria-modal="true" aria-label="Aviso de disponibilidade">

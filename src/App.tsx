@@ -4067,7 +4067,29 @@ depende da integridade dos dados fornecidos.
               type="button"
               disabled={!nomeEmpresa.trim() || !usuarioAtual}
               onClick={async () => {
-                if (!usuarioAtual || !nomeEmpresa.trim()) return;
+              if (!usuarioAtual || !nomeEmpresa.trim()) return;
+
+// PREVANZIA — Verificação do plano e limite de empresas
+const planoAtivo =
+  assinaturaAtual?.status === 'ATIVA' &&
+  (!assinaturaAtual.validadeAte ||
+    new Date(assinaturaAtual.validadeAte).getTime() > Date.now())
+    ? assinaturaAtual.plano
+    : null;
+
+if (!planoAtivo) {
+  alert('É necessário ter uma assinatura ativa para cadastrar empresas.');
+  return;
+}
+
+const limiteEmpresas = PLANOS_PREVANZIA[planoAtivo].limiteEmpresas;
+
+if (empresasCadastradas.length >= limiteEmpresas) {
+  alert(
+    `Seu plano permite cadastrar até ${limiteEmpresas} empresa(s).`
+  );
+  return;
+}
 
                 const id = crypto.randomUUID();
 

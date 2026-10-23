@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PREVANZIA — Redirecionando</title>
+</head>
+<body>
+  <p>Carregando PREVANZIA...</p>
+
+  <script>
+    (function () {
+      const base = '/inteligencia-do-proprietario/';
+      const caminho = window.location.pathname;
+
+      if (caminho === base + 'site' ||
+          caminho === base + 'site/') {
+        const destino = base + '?pagina=site';
+        window.location.replace(destino);
+      } else {
+        document.body.textContent = 'Página não encontrada.';
+      }
+    })();
+  </script>
+</body>
+</html>

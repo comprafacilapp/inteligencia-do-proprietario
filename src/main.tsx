@@ -4,6 +4,7 @@ import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import './index.css';
 import App from './App.tsx';
 import Login from './Login.tsx';
+import SiteComercial from './SiteComercial.tsx';
 import { auth } from './firebase';
 
 function AplicacaoProtegida() {
@@ -104,12 +105,22 @@ setBloqueado(false);
   return <App key={usuario.uid} />;
 }
 
+// PREVANZIA — Navegação inicial do site comercial
+const caminhoAtual = window.location.pathname;
+
+const mostrarSiteComercial =
+  caminhoAtual.endsWith('/site') ||
+  caminhoAtual.endsWith('/site/');
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AplicacaoProtegida />
+    {mostrarSiteComercial ? (
+      <SiteComercial />
+    ) : (
+      <AplicacaoProtegida />
+    )}
   </StrictMode>
 );
-
 // Registra o Service Worker somente na versão publicada.
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {

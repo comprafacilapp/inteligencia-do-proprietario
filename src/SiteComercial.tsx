@@ -119,12 +119,15 @@ export default function SiteComercial() {
           Sem cartão de crédito para iniciar o teste.
         </p>
 
-        {/* APRESENTADORA OFICIAL DO PREVANZIA */}
+              {/* APRESENTADORA E PAINEL DO PREVANZIA */}
         <div
           style={{
             display: 'flex',
+            alignItems: 'center',
             justifyContent: 'center',
-            marginTop: 30,
+            flexWrap: 'wrap',
+            gap: 24,
+            marginTop: 40,
           }}
         >
           <img
@@ -132,11 +135,48 @@ export default function SiteComercial() {
             alt="Apresentadora do PREVANZIA"
             style={{
               width: '100%',
-              maxWidth: 520,
+              maxWidth: 400,
               height: 'auto',
-              borderRadius: 20,
             }}
           />
+
+          <div
+            style={{
+              background: '#ffffff',
+              color: '#14263d',
+              padding: 28,
+              borderRadius: 18,
+              width: '100%',
+              maxWidth: 450,
+              boxSizing: 'border-box',
+              textAlign: 'left',
+              boxShadow: '0 15px 40px rgba(0,0,0,0.2)',
+            }}
+          >
+            <h2 style={{ marginTop: 0 }}>
+              Inteligência financeira
+            </h2>
+
+            <p>📊 Diagnósticos automáticos</p>
+            <p>💡 Oportunidades de melhoria</p>
+            <p>🎯 Decisões mais inteligentes</p>
+            <p>📈 Acompanhamento de resultados</p>
+
+            <div
+              style={{
+                background: '#eaf7fc',
+                padding: 18,
+                borderRadius: 12,
+                marginTop: 20,
+              }}
+            >
+              <strong>PREVANZIA</strong>
+              <p style={{ marginBottom: 0 }}>
+                Antecipe problemas e descubra oportunidades
+                para sua empresa.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 

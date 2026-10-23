@@ -115,9 +115,29 @@ export default function SiteComercial() {
           Experimente grátis por 7 dias
         </button>
 
-        <p style={{ fontSize: 13, marginTop: 18 }}>
+               <p style={{ fontSize: 13, marginTop: 18 }}>
           Sem cartão de crédito para iniciar o teste.
         </p>
+
+        {/* APRESENTADORA OFICIAL DO PREVANZIA */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            marginTop: 30,
+          }}
+        >
+          <img
+            src="/inteligencia-do-proprietario/Profissional%20A%20Apontar%20Para%20o%20Espa%C3%A7o.png"
+            alt="Apresentadora do PREVANZIA"
+            style={{
+              width: '100%',
+              maxWidth: 520,
+              height: 'auto',
+              borderRadius: 20,
+            }}
+          />
+        </div>
       </section>
 
       <section id="recursos" style={estilos.secao}>

@@ -277,3 +277,33 @@ export default function SiteComercial() {
           }}
         >
           <div
+                        style={{
+              background: '#ffffff',
+              color: '#14263d',
+              padding: 30,
+              borderRadius: 15,
+              maxWidth: 420,
+              textAlign: 'center',
+            }}
+          >
+            <h2>Estamos preparando essa novidade!</h2>
+
+            <p>
+              O período gratuito e as assinaturas do
+              PREVANZIA estarão disponíveis após
+              a conclusão da integração de pagamentos.
+            </p>
+
+            <button
+              type="button"
+              style={estilos.botao}
+              onClick={() => setMostrarAviso(false)}
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

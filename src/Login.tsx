@@ -1,11 +1,14 @@
+
 import { useState, type FormEvent } from 'react';
 import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  signOut,
 } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+
 export default function Login() {
   const [modo, setModo] = useState<'entrar' | 'cadastrar'>('entrar');
   const [email, setEmail] = useState('');
@@ -15,58 +18,108 @@ export default function Login() {
 
   async function enviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
+
+    if (carregando) return;
+
     setMensagem('');
     setCarregando(true);
 
     try {
-  if (modo === 'cadastrar') {
-    const credencial = await createUserWithEmailAndPassword(
-      auth,
-      email.trim(),
-      senha
-    );
+      if (modo === 'cadastrar') {
+        const credencial = await createUserWithEmailAndPassword(
+          auth,
+          email.trim(),
+          senha
+        );
 
-    // PREVANZIA — Início dos 7 dias gratuitos
-    // COLE O CÓDIGO NOVO AQUI
-    await setDoc(
-      doc(
-        db,
-        'usuarios',
-        credencial.user.uid,
-        'configuracoes',
-        'testeGratuito'
-      ),
-      {
-        inicio: serverTimestamp(),
+        // Registra o início do teste gratuito de 7 dias.
+        try {
+          await setDoc(
+            doc(
+              db,
+              'usuarios',
+              credencial.user.uid,
+              'configuracoes',
+              'testeGratuito'
+            ),
+            {
+              inicio: serverTimestamp(),
+            }
+          );
+        } catch (erro) {
+          console.error(
+            'Falha ao registrar o teste gratuito:',
+            erro
+          );
+
+          try {
+            await signOut(auth);
+          } catch (erroSaida) {
+            console.error(
+              'Falha ao encerrar a sessão após erro no cadastro:',
+              erroSaida
+            );
+          }
+
+          throw new Error('FALHA_AO_REGISTRAR_TESTE');
+        }
+      } else {
+        await signInWithEmailAndPassword(
+          auth,
+          email.trim(),
+          senha
+        );
       }
-    );
-
-  } else {
-    await signInWithEmailAndPassword(auth, email.trim(), senha);
-  }
-} catch (erro: unknown) {
+    } catch (erro: unknown) {
       const codigo =
-        typeof erro === 'object' && erro !== null && 'code' in erro
+        typeof erro === 'object' &&
+        erro !== null &&
+        'code' in erro
           ? String(erro.code)
           : '';
 
       const mensagens: Record<string, string> = {
-        'auth/email-already-in-use': 'Este e-mail já está cadastrado.',
-        'auth/invalid-email': 'Digite um e-mail válido.',
-        'auth/weak-password': 'A senha é muito fraca.',
-        'auth/invalid-credential': 'E-mail ou senha incorretos.',
+        'auth/email-already-in-use':
+          'Este e-mail já está cadastrado.',
+        'auth/invalid-email':
+          'Digite um e-mail válido.',
+        'auth/weak-password':
+          'A senha deve ter pelo menos 6 caracteres.',
+        'auth/invalid-credential':
+          'E-mail ou senha incorretos.',
+        'auth/user-not-found':
+          'E-mail ou senha incorretos.',
+        'auth/wrong-password':
+          'E-mail ou senha incorretos.',
         'auth/too-many-requests':
           'Muitas tentativas. Aguarde e tente novamente.',
-        'auth/network-request-failed': 'Verifique sua conexão com a internet.',
+        'auth/network-request-failed':
+          'Verifique sua conexão com a internet.',
+        'auth/operation-not-allowed':
+          'O método de cadastro não está habilitado no Firebase.',
       };
 
-      setMensagem(mensagens[codigo] || 'Não foi possível concluir a operação.');
+      if (
+        erro instanceof Error &&
+        erro.message === 'FALHA_AO_REGISTRAR_TESTE'
+      ) {
+        setMensagem(
+          'Não foi possível ativar o teste gratuito. A conta de acesso foi criada, mas o teste precisa ser regularizado. Tente entrar novamente ou contate o suporte.'
+        );
+      } else {
+        setMensagem(
+          mensagens[codigo] ||
+            'Não foi possível concluir a operação. Tente novamente.'
+        );
+      }
     } finally {
       setCarregando(false);
     }
   }
 
   async function recuperarSenha() {
+    if (carregando) return;
+
     if (!email.trim()) {
       setMensagem('Digite seu e-mail para recuperar a senha.');
       return;
@@ -77,10 +130,13 @@ export default function Login() {
 
     try {
       await sendPasswordResetEmail(auth, email.trim());
+
       setMensagem(
         'Se o e-mail estiver cadastrado, você receberá instruções de recuperação.'
       );
-    } catch {
+    } catch (erro: unknown) {
+      console.error('Falha na recuperação de senha:', erro);
+
       setMensagem(
         'Não foi possível solicitar a recuperação. Confira o e-mail e tente novamente.'
       );
@@ -131,56 +187,87 @@ export default function Login() {
           >
             P
           </div>
+
           <div>
-            <h1 style={{ margin: 0, color: '#10263d', fontSize: 25 }}>
+            <h1
+              style={{
+                margin: 0,
+                color: '#10263d',
+                fontSize: 25,
+              }}
+            >
               PREVANZIA
             </h1>
-            <small style={{ color: '#65758a' }}>Inteligência empresarial</small>
+
+            <small style={{ color: '#65758a' }}>
+              Inteligência empresarial
+            </small>
           </div>
         </div>
 
         <h2 style={{ color: '#10263d' }}>
-          {modo === 'entrar' ? 'Acessar minha conta' : 'Criar minha conta'}
+          {modo === 'entrar'
+            ? 'Acessar minha conta'
+            : 'Criar minha conta'}
         </h2>
 
         <form onSubmit={enviar}>
           <label htmlFor="login-email">E-mail</label>
+
           <input
             id="login-email"
             type="email"
             required
             autoComplete="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(evento) => setEmail(evento.target.value)}
             style={campo}
           />
 
           <label htmlFor="login-senha">Senha</label>
+
           <input
             id="login-senha"
             type="password"
             required
             minLength={6}
             autoComplete={
-              modo === 'entrar' ? 'current-password' : 'new-password'
+              modo === 'entrar'
+                ? 'current-password'
+                : 'new-password'
             }
             value={senha}
-            onChange={(e) => setSenha(e.target.value)}
+            onChange={(evento) => setSenha(evento.target.value)}
             style={campo}
           />
 
           {mensagem && (
-            <p role="status" style={{ color: '#a33a30', fontSize: 14 }}>
+            <p
+              role="status"
+              style={{
+                color: '#a33a30',
+                fontSize: 14,
+                lineHeight: 1.5,
+              }}
+            >
               {mensagem}
             </p>
           )}
 
-          <button type="submit" disabled={carregando} style={botao}>
+          <button
+            type="submit"
+            disabled={carregando}
+            style={{
+              ...botao,
+              opacity: carregando ? 0.7 : 1,
+              cursor: carregando ? 'wait' : 'pointer',
+            }}
+          >
             {carregando
               ? 'Aguarde...'
               : modo === 'entrar'
-              ? 'Entrar'
-              : 'Criar conta'}
+                ? 'Entrar'
+                : 'Criar conta'}
           </button>
         </form>
 
@@ -199,7 +286,9 @@ export default function Login() {
           type="button"
           disabled={carregando}
           onClick={() => {
-            setModo(modo === 'entrar' ? 'cadastrar' : 'entrar');
+            setModo((atual) =>
+              atual === 'entrar' ? 'cadastrar' : 'entrar'
+            );
             setMensagem('');
           }}
           style={botaoTexto}
@@ -234,7 +323,6 @@ const botao = {
   color: '#ffffff',
   fontSize: 16,
   fontWeight: 'bold' as const,
-  cursor: 'pointer',
 };
 
 const botaoTexto = {

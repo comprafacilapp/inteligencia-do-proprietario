@@ -667,15 +667,28 @@ const empresaAtualRelatorio = empresasCadastradas.find(
       (resultado) => {
         const dados = resultado.data();
 
+                // COLE O CÓDIGO NOVO AQUI
         if (
           resultado.exists() &&
           (dados?.plano === 'ESSENCIAL' ||
-            dados?.plano === 'PROFISSIONAL') &&
+            dados?.plano === 'PROFISSIONAL' ||
+            dados?.plano === 'PRO') &&
           ['ATIVA', 'PENDENTE', 'CANCELADA', 'EXPIRADA'].includes(
             dados?.status
           )
         ) {
-          setAssinaturaAtual(dados as AssinaturaPrevanzia);
+          const validadeOriginal = dados?.validadeAte;
+
+          const validadeConvertida =
+            validadeOriginal &&
+            typeof validadeOriginal.toDate === 'function'
+              ? validadeOriginal.toDate().toISOString()
+              : validadeOriginal;
+
+          setAssinaturaAtual({
+            ...(dados as AssinaturaPrevanzia),
+            validadeAte: validadeConvertida,
+          });
         } else {
           setAssinaturaAtual(null);
         }

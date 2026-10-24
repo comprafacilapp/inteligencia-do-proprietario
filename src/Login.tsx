@@ -4,8 +4,8 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
 } from 'firebase/auth';
-import { auth } from './firebase';
-
+import { auth, db } from './firebase';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 export default function Login() {
   const [modo, setModo] = useState<'entrar' | 'cadastrar'>('entrar');
   const [email, setEmail] = useState('');
@@ -19,12 +19,32 @@ export default function Login() {
     setCarregando(true);
 
     try {
-      if (modo === 'cadastrar') {
-        await createUserWithEmailAndPassword(auth, email.trim(), senha);
-      } else {
-        await signInWithEmailAndPassword(auth, email.trim(), senha);
+  if (modo === 'cadastrar') {
+    const credencial = await createUserWithEmailAndPassword(
+      auth,
+      email.trim(),
+      senha
+    );
+
+    // PREVANZIA — Início dos 7 dias gratuitos
+    // COLE O CÓDIGO NOVO AQUI
+    await setDoc(
+      doc(
+        db,
+        'usuarios',
+        credencial.user.uid,
+        'configuracoes',
+        'testeGratuito'
+      ),
+      {
+        inicio: serverTimestamp(),
       }
-    } catch (erro: unknown) {
+    );
+
+  } else {
+    await signInWithEmailAndPassword(auth, email.trim(), senha);
+  }
+} catch (erro: unknown) {
       const codigo =
         typeof erro === 'object' && erro !== null && 'code' in erro
           ? String(erro.code)

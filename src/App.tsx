@@ -550,6 +550,17 @@ function App() {
     // PREVANZIA — Assinatura do proprietário
   const [assinaturaAtual, setAssinaturaAtual] =
     useState<AssinaturaPrevanzia | null>(null);
+    // PREVANZIA — Controle dos 7 dias gratuitos
+  const [inicioTesteGratuito, setInicioTesteGratuito] =
+    useState<Date | null>(null);
+    // PREVANZIA — Prazo de 7 dias gratuitos
+  const prazoTesteGratuito = inicioTesteGratuito
+    ? new Date(inicioTesteGratuito.getTime() + 7 * 24 * 60 * 60 * 1000)
+    : null;
+
+  const testeGratuitoValido =
+    prazoTesteGratuito !== null &&
+    Date.now() < prazoTesteGratuito.getTime();
   const [empresaSelecionadaId, setEmpresaSelecionadaId] = useState<
     string | null
   >(() => {
@@ -589,6 +600,42 @@ const empresaAtualRelatorio = empresasCadastradas.find(
       empresa.proprietarioUid === usuarioAtual?.uid
   );
   // COLE O CÓDIGO NOVO AQUI
+    // PREVANZIA — Leitura do início do teste gratuito
+  useEffect(() => {
+    if (!usuarioAtual) {
+      setInicioTesteGratuito(null);
+      return;
+    }
+
+    setInicioTesteGratuito(null);
+
+    const referenciaTeste = doc(
+      db,
+      'usuarios',
+      usuarioAtual.uid,
+      'configuracoes',
+      'testeGratuito'
+    );
+
+    const cancelarTeste = onSnapshot(
+      referenciaTeste,
+      (resultado) => {
+        const inicio = resultado.data()?.inicio;
+
+        setInicioTesteGratuito(
+          inicio && typeof inicio.toDate === 'function'
+            ? inicio.toDate()
+            : null
+        );
+      },
+      (erro) => {
+        console.error('Erro ao carregar teste gratuito:', erro);
+        setInicioTesteGratuito(null);
+      }
+    );
+
+    return () => cancelarTeste();
+  }, [usuarioAtual]);
     // PREVANZIA — Leitura da assinatura do proprietário
   useEffect(() => {
     if (!usuarioAtual) {
@@ -2627,6 +2674,15 @@ if (
     'Fontes de dados',
     'Empresas',
   ];
+    // PREVANZIA — Assinatura paga válida
+  const assinaturaPagaValida =
+    assinaturaAtual?.status === 'ATIVA' &&
+    (!assinaturaAtual.validadeAte ||
+      new Date(assinaturaAtual.validadeAte).getTime() > Date.now());
+
+  // PREVANZIA — Autorização de acesso
+  const acessoAutorizado =
+    testeGratuitoValido || assinaturaPagaValida;
 
   return (
     <div className="app">
@@ -4077,12 +4133,15 @@ const planoAtivo =
     ? assinaturaAtual.plano
     : null;
 
-if (!planoAtivo) {
-  alert('É necessário ter uma assinatura ativa para cadastrar empresas.');
+// PREVANZIA — Cadastro durante o teste ou assinatura
+if (!acessoAutorizado) {
+  alert('Seu teste gratuito terminou. Contrate um plano para continuar.');
   return;
 }
 
-const limiteEmpresas = PLANOS_PREVANZIA[planoAtivo].limiteEmpresas;
+const limiteEmpresas = planoAtivo
+  ? PLANOS_PREVANZIA[planoAtivo].limiteEmpresas
+  : 1;
 
 if (empresasCadastradas.length >= limiteEmpresas) {
   alert(

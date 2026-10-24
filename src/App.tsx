@@ -553,6 +553,9 @@ function App() {
     // PREVANZIA — Controle dos 7 dias gratuitos
   const [inicioTesteGratuito, setInicioTesteGratuito] =
     useState<Date | null>(null);
+  const [carregandoTesteGratuito, setCarregandoTesteGratuito] =
+    useState(true);
+  const [carregandoAssinatura, setCarregandoAssinatura] = useState(true);
     // PREVANZIA — Prazo de 7 dias gratuitos
   const prazoTesteGratuito = inicioTesteGratuito
     ? new Date(inicioTesteGratuito.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -604,9 +607,11 @@ const empresaAtualRelatorio = empresasCadastradas.find(
   useEffect(() => {
     if (!usuarioAtual) {
       setInicioTesteGratuito(null);
+      setCarregandoTesteGratuito(false);
       return;
     }
 
+    setCarregandoTesteGratuito(true);
     setInicioTesteGratuito(null);
 
     const referenciaTeste = doc(
@@ -627,10 +632,12 @@ const empresaAtualRelatorio = empresasCadastradas.find(
             ? inicio.toDate()
             : null
         );
+        setCarregandoTesteGratuito(false);
       },
       (erro) => {
         console.error('Erro ao carregar teste gratuito:', erro);
         setInicioTesteGratuito(null);
+        setCarregandoTesteGratuito(false);
       }
     );
 
@@ -640,9 +647,11 @@ const empresaAtualRelatorio = empresasCadastradas.find(
   useEffect(() => {
     if (!usuarioAtual) {
       setAssinaturaAtual(null);
+      setCarregandoAssinatura(false);
       return;
     }
 
+    setCarregandoAssinatura(true);
     setAssinaturaAtual(null);
 
     const referenciaAssinatura = doc(
@@ -670,10 +679,12 @@ const empresaAtualRelatorio = empresasCadastradas.find(
         } else {
           setAssinaturaAtual(null);
         }
+        setCarregandoAssinatura(false);
       },
       (erro) => {
         console.error('Erro ao carregar assinatura:', erro);
         setAssinaturaAtual(null);
+        setCarregandoAssinatura(false);
       }
     );
 
@@ -2683,6 +2694,95 @@ if (
   // PREVANZIA — Autorização de acesso
   const acessoAutorizado =
     testeGratuitoValido || assinaturaPagaValida;
+  const carregandoAcesso =
+    Boolean(usuarioAtual) &&
+    (carregandoTesteGratuito || carregandoAssinatura);
+
+  // Não mostrar o painel antes de confirmar o teste e a assinatura no Firestore.
+  if (usuarioAtual && carregandoAcesso) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          padding: '24px',
+          background: '#f8fafc',
+          color: '#0f172a',
+          fontFamily: 'Arial, sans-serif',
+          textAlign: 'center',
+        }}
+      >
+        <section style={{ maxWidth: '440px' }}>
+          <h1 style={{ marginBottom: '12px' }}>PREVANZIA</h1>
+          <p>Estamos verificando seu acesso com segurança...</p>
+        </section>
+      </main>
+    );
+  }
+
+  // O bloqueio mantém a opção de sair da conta disponível.
+  if (usuarioAtual && !acessoAutorizado) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          padding: '24px',
+          background: '#f8fafc',
+          color: '#0f172a',
+          fontFamily: 'Arial, sans-serif',
+        }}
+      >
+        <section
+          style={{
+            width: '100%',
+            maxWidth: '520px',
+            boxSizing: 'border-box',
+            padding: '32px',
+            borderRadius: '16px',
+            background: '#ffffff',
+            boxShadow: '0 10px 30px rgba(15, 23, 42, 0.10)',
+            textAlign: 'center',
+          }}
+        >
+          <div style={{ fontSize: '14px', fontWeight: 700, letterSpacing: '2px' }}>
+            PREVANZIA
+          </div>
+          <h1 style={{ margin: '16px 0 12px', fontSize: '28px' }}>
+            Seu período de acesso terminou
+          </h1>
+          <p style={{ lineHeight: 1.6, color: '#475569' }}>
+            Seu teste gratuito de 7 dias não está mais ativo e não encontramos
+            uma assinatura válida para esta conta. Para continuar usando o
+            painel, entre em contato com o responsável pela assinatura.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              void signOut(auth).catch((erro) => {
+                console.error('Erro ao sair da conta:', erro);
+                alert('Não foi possível sair agora. Tente novamente.');
+              });
+            }}
+            style={{
+              marginTop: '12px',
+              padding: '12px 20px',
+              border: 0,
+              borderRadius: '8px',
+              background: '#0f172a',
+              color: '#ffffff',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Sair da conta
+          </button>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <div className="app">
